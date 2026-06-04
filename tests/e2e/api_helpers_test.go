@@ -58,6 +58,10 @@ var _ = BeforeSuite(func() {
 
 	// Check podman for infrastructure disruption tests.
 	initPodman()
+
+	// Create catalog item and discover SPs for rehydration tests.
+	initRehydrationCatalogItem()
+	initThreeTierSP()
 })
 
 // doRequest builds a full URL from a relative path, sends the request, and

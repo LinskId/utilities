@@ -67,7 +67,7 @@ Service providers are defined declaratively in `providers/*.conf` files. Each co
 
 **To add a new provider:** drop a `.conf` file in `providers/` and (if needed) add a validation hook function in `deploy-dcm.sh`. No other changes to the deploy script are required — flags, usage, arg parsing, and env exports are all generated from the registry.
 
-Current providers: `kubevirt`, `k8s-container`, `acm-cluster`.
+Current providers: `kubevirt`, `k8s-container`, `acm-cluster`, `three-tier-app-demo`, `three-tier-app-demo-2`, `three-tier-app-demo-3`.
 
 ### Script Structure
 
@@ -136,19 +136,31 @@ tests/
     cli_version_test.go               # CLI version command test (Label: "smoke", "cli")
     cli_providers_test.go             # CLI sp provider read tests (Label: "cli")
     cli_policy_test.go                # CLI policy CRUD tests (Label: "cli")
+    rehydration_helpers_test.go        # Rehydration types, provider discovery, lifecycle helpers
+    rehydration_happy_path_test.go     # Core rehydration flow (Label: "rehydration", "happy-path")
+    rehydration_failover_test.go       # Failover + deferred delete (Label: "rehydration", "failover", "disruptive")
+    rehydration_policy_test.go         # Sovereignty + intent (Label: "rehydration", "policy")
+    rehydration_negative_test.go       # Error paths + concurrency (Label: "rehydration", "negative")
+    rehydration_data_integrity_test.go # Integrity + regressions (Label: "rehydration", "integrity")
+    rehydration_api_contract_test.go   # RFC 7807 response shapes (Label: "rehydration", "contract")
+    rehydration_cli_test.go            # CLI rehydrate commands (Label: "rehydration", "cli")
+    rehydration_persistence_test.go    # SPRM restart, ServiceType (Label: "rehydration", "disruptive")
 ```
 
 ### Running Tests
 
 ```bash
-make test-e2e          # Run all E2E tests (stack must be running)
-make test-smoke        # Run smoke tests only (health checks + CLI version)
-make test-cli          # Run CLI tests only
-make test-sp           # Run container SP tests (SP must be deployed)
-make test-acm-sp       # Run ACM cluster SP tests (ACM SP must be deployed)
-make test-core         # Run core platform tests (full control plane provisioning flow)
-make test-e2e-full     # Full lifecycle: deploy → test → teardown
-make download-cli      # Download latest DCM CLI from GitHub releases
+make test-e2e              # Run all E2E tests (stack must be running)
+make test-smoke            # Run smoke tests only (health checks + CLI version)
+make test-cli              # Run CLI tests only
+make test-sp               # Run container SP tests (SP must be deployed)
+make test-acm-sp           # Run ACM cluster SP tests (ACM SP must be deployed)
+make test-core             # Run core platform tests (full control plane provisioning flow)
+make test-rehydration      # Run all rehydration tests (multi-provider + podman required)
+make test-rehydration-safe # Run non-disruptive rehydration tests only
+make test-rehydration-cli  # Run rehydration CLI tests only
+make test-e2e-full         # Full lifecycle: deploy → test → teardown
+make download-cli          # Download latest DCM CLI from GitHub releases
 ```
 
 The test harness (`tests/run-e2e.sh`) supports `--skip-deploy`, `--skip-teardown`, `--skip-cli`, `--dcm-cli-path`, `--label-filter`, `--gateway-url`, `--junit-report`, and service provider flags (`--k8s-container-service-provider`, `--all-service-providers`, `--kubeconfig`, `--cluster-api`, `--cluster-password`, etc.).
@@ -167,6 +179,8 @@ All test targets support JUnit XML output: `make test-e2e JUNIT_REPORT=results.x
 | **Disruptive tests** | Tests that stop/start infrastructure (e.g. NATS) | `disruptive` |
 | **CLI tests** | DCM CLI binary against the live stack | `cli` |
 | **Smoke tests** | Health checks + CLI version (quick validation) | `smoke` |
+| **Rehydration tests** | Rehydration lifecycle, failover, policy, integrity | `rehydration` |
+| **Rehydration subtypes** | happy-path, failover, policy, negative, integrity, contract | see file headers |
 
 ### CLI Binary Resolution
 
@@ -189,7 +203,7 @@ CLI tests are skipped (not failed) if no binary is available.
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
 - `DCM_CLI_PATH` env var specifies the CLI binary path
 - `DCM_CONTAINER_PROVIDER_NAME` env var overrides which container provider to target in core platform tests (default: first `service_type=container` provider found)
-- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`) enable selective test runs via `--label-filter`
+- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
 - SP tests skip gracefully if the container SP or ACM cluster SP isn't reachable (no hard failure)
 - Cluster tests skip gracefully if `kubectl`/`oc` is unavailable or the cluster is unreachable
 - Disruptive tests skip if `podman` is unavailable; exclude from normal runs with `--label-filter '!disruptive'`

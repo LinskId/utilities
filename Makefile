@@ -1,4 +1,4 @@
-.PHONY: help e2e-up test-e2e test-smoke test-cli test-sp test-acm-sp test-core e2e-down test-e2e-full download-cli cli-version lint
+.PHONY: help e2e-up test-e2e test-smoke test-cli test-sp test-acm-sp test-core test-rehydration test-rehydration-safe test-rehydration-cli e2e-down test-e2e-full download-cli cli-version lint
 
 # Set JUNIT_REPORT to a filename to produce JUnit XML output.
 # Example: make test-e2e JUNIT_REPORT=results.xml
@@ -31,6 +31,15 @@ test-acm-sp: ## Run ACM cluster SP tests only
 
 test-core: ## Run core platform tests (full control plane provisioning flow)
 	cd tests/e2e && $(GINKGO_BASE) --label-filter=core .
+
+test-rehydration: ## Run all rehydration tests (multi-provider stack with podman required)
+	cd tests/e2e && $(GINKGO_BASE) --label-filter=rehydration .
+
+test-rehydration-safe: ## Run non-disruptive rehydration tests only
+	cd tests/e2e && $(GINKGO_BASE) --label-filter='rehydration && !disruptive' .
+
+test-rehydration-cli: ## Run rehydration CLI tests only
+	cd tests/e2e && $(GINKGO_BASE) --label-filter='rehydration && cli' .
 
 e2e-down: ## Tear down the DCM stack
 	./scripts/deploy-dcm.sh --tear-down

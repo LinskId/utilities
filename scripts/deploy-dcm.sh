@@ -282,6 +282,13 @@ tear_down() {
         podman pod ls --filter "name=${project_name}" --format '{{.ID}}' 2>/dev/null | xargs -r podman pod rm -f 2>/dev/null || true
         podman network rm -f "${project_name}_default" 2>/dev/null || true
 
+        local stale_volumes
+        stale_volumes=$(podman volume ls --format '{{.Name}}' 2>/dev/null | grep "^${project_name}_" || true)
+        if [[ -n "${stale_volumes}" ]]; then
+            info "Removing named volumes..."
+            echo "${stale_volumes}" | xargs -r podman volume rm 2>/dev/null || true
+        fi
+
         info "Removing deploy directory: ${deploy_dir}"
         rm -rf "${deploy_dir}"
     fi
@@ -797,8 +804,16 @@ info "All prerequisites found: ${REQUIRED_TOOLS[*]}"
 
 ensure_podman_running || exit 1
 
-# Resolve cluster credentials when any provider or ACM/MCE deploy is enabled
-if any_provider_enabled || [[ -n "${DEPLOY_ACM_MCE}" ]]; then
+# Resolve cluster credentials only when a provider needs cluster access or ACM/MCE deploy is enabled
+any_provider_needs_cluster() {
+    local i
+    for i in $(seq 0 $((PROV_COUNT - 1))); do
+        [[ "${PROV_ENABLED[$i]}" == true ]] || continue
+        [[ -n "${PROV_CLI_REQS[$i]}" ]] && return 0
+    done
+    return 1
+}
+if any_provider_needs_cluster || [[ -n "${DEPLOY_ACM_MCE}" ]]; then
     resolve_kubeconfig || exit 1
 fi
 

@@ -1,0 +1,29 @@
+# Compose override: third k8s-container SP for sovereignty/region testing.
+# Targets namespace C on the same OCP cluster.
+#
+# Injected automatically by deploy-dcm.sh via the provider registry
+# (providers/k8s-container-3.conf → COMPOSE_OVERRIDE).
+
+services:
+  k8s-container-service-provider-3:
+    image: quay.io/dcm-project/k8s-container-service-provider:${K8S_CONTAINER_SERVICE_PROVIDER_VERSION:-main}
+    pull_policy: always
+    environment:
+      SVC_ADDRESS: ":8080"
+      SVC_LOG_LEVEL: "info"
+      SP_NAME: "k8s-container-sp-c"
+      SP_ENDPOINT: "http://k8s-container-service-provider-3:8080"
+      SP_K8S_NAMESPACE: ${K8S_CONTAINER_SP_3_NAMESPACE:-rehydrate-ns-c}
+      SP_K8S_KUBECONFIG: "/kubeconfig"
+      SP_K8S_EXTERNAL_SVC_TYPE: "NodePort"
+      DCM_REGISTRATION_URL: "http://service-provider-manager:8080/api/v1alpha1"
+      SP_NATS_URL: "nats://nats:4222"
+    expose:
+      - "8080"
+    ports:
+      - "8088:8080"
+    volumes:
+      - ${K8S_CONTAINER_SP_3_KUBECONFIG:-~/.kube/config}:/kubeconfig:ro,z
+    depends_on:
+      service-provider-manager: { condition: service_started }
+      nats: { condition: service_started }
