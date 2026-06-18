@@ -44,6 +44,62 @@ When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. 
 | `DCM_CLI_PATH` | (auto-resolved) | CLI binary path |
 | `DCM_CONTAINER_PROVIDER_NAME` | (first container provider) | Target a specific container provider in core platform tests |
 
+## Code Quality Patterns
+
+### Never use `time.Sleep` in assertions
+Fixed sleeps are flakiness sources. Use Gomega's async matchers instead:
+- **Waiting for a condition**: `Eventually(func() T { ... }).WithTimeout(...).WithPolling(...).Should(...)`
+- **Asserting stability (negative — thing does NOT change)**: `Consistently(func() T { ... }).WithTimeout(...).WithPolling(...).Should(...)`
+
+```go
+// ❌ BAD — flaky: 2s may not be enough under load
+time.Sleep(2 * time.Second)
+resp, err := doRequest(http.MethodGet, "/health/providers", "")
+Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+// ✅ GOOD — retries with timeout
+Eventually(func() int {
+    r, e := doRequest(http.MethodGet, "/health/providers", "")
+    if e != nil { return 0 }
+    defer r.Body.Close()
+    return r.StatusCode
+}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal(http.StatusOK))
+
+// ✅ GOOD — asserts a value stays unchanged
+Consistently(func() string {
+    // ... poll and return current value
+}).WithTimeout(5 * time.Second).WithPolling(1 * time.Second).Should(Equal(expected))
+```
+
+### Always close response bodies
+Add `defer resp.Body.Close()` immediately after `Expect(err).NotTo(HaveOccurred())` on every `doRequest` call in `It` blocks. If an `Expect` panics before `decodeJSON` is reached, the body leaks.
+
+```go
+// ✅ Pattern for every doRequest in an It block
+resp, err := doRequest(http.MethodGet, "/resource/"+id, "")
+Expect(err).NotTo(HaveOccurred())
+defer resp.Body.Close()
+Expect(resp.StatusCode).To(Equal(http.StatusOK))
+```
+
+### Extract repeated setup after 3+ uses
+If more than 3 `Ordered` contexts share the same `BeforeAll`/`AfterAll` pattern (e.g. discover provider → create policy → create catalog item → create instance → wait for RUNNING), extract a shared helper struct and functions to reduce duplication.
+
+### Use explicit boolean flags over zeroing IDs
+When a test intentionally deletes a resource mid-flight (so `AfterAll` should skip cleanup), use a named boolean flag rather than zeroing the ID string:
+
+```go
+// ✅ GOOD — intent is clear
+var instanceDeleted bool
+// ... in It block:
+instanceDeleted = true
+// ... in AfterAll:
+if !instanceDeleted && instanceID != "" { /* cleanup */ }
+```
+
+### NATS ordering comments
+When testing message ordering via NATS, comment whether the test relies on single-publisher ordering guarantees vs. cross-publisher behavior, since NATS only guarantees order within one connection.
+
 ## Compose Overrides
 SP compose overrides are managed by the provider registry (`providers/*.conf`). Each provider's `COMPOSE_OVERRIDE` key specifies its overlay file, which `deploy-dcm.sh` injects automatically when the provider is enabled:
 - `tests/compose-sp-test.yaml` — publishes container SP port 8082 (via `k8s-container.conf`)
