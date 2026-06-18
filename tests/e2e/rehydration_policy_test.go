@@ -15,7 +15,7 @@ var _ = Describe("Rehydration Policy", Label("rehydration", "policy"), func() {
 	})
 
 	Context("sovereignty", Label("disruptive"), func() {
-		It("placement policy constrains instance to provider group", func() {
+		It("placement policy constrains instance to provider group", Label("cluster"), func() {
 			requireThreeProviders()
 			requirePodman()
 
@@ -44,7 +44,7 @@ var _ = Describe("Rehydration Policy", Label("rehydration", "policy"), func() {
 			}
 		})
 
-		It("failover stays within provider group", func() {
+		It("failover stays within provider group", Label("cluster"), func() {
 			requireThreeProviders()
 			requirePodman()
 
@@ -145,7 +145,7 @@ var _ = Describe("Rehydration Policy", Label("rehydration", "policy"), func() {
 				"user_values should be identical before and after rehydration")
 		})
 
-		It("policy change causes rehydration to select different provider", func() {
+		It("policy change causes rehydration to select different provider", Label("cluster"), func() {
 			requireMultiProvider()
 
 			providerA := threeTierProviders[0]

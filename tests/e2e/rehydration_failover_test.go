@@ -50,7 +50,7 @@ var _ = Describe("Rehydration Failover", Label("rehydration", "failover", "disru
 			}
 		})
 
-		It("rehydrate after provider stop moves workload to healthy provider", func() {
+		It("rehydrate after provider stop moves workload to healthy provider", Label("cluster"), func() {
 			preInst := getInstance(instanceUID)
 			origResourceID := preInst.ResourceID
 
@@ -76,7 +76,7 @@ var _ = Describe("Rehydration Failover", Label("rehydration", "failover", "disru
 			}
 		})
 
-		It("rehydrate back after provider restore (bidirectional failover)", func() {
+		It("rehydrate back after provider restore (bidirectional failover)", Label("cluster"), func() {
 			startProvider(providerA)
 			waitForProviderHealth(providerA.Name, "ready", healthTimeout)
 
