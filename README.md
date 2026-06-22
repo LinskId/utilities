@@ -1,6 +1,6 @@
 # DCM Utilities
 
-Common scripts and tooling shared across the [DCM](https://github.com/dcm-project) ecosystem. Provides the E2E deploy script for bringing up the full DCM stack locally and a Ginkgo/Gomega E2E test suite that validates the stack through the API gateway and DCM CLI.
+Common scripts and tooling shared across the [DCM](https://github.com/dcm-project) ecosystem. Provides the E2E deploy script for bringing up the full DCM stack locally and a Ginkgo/Gomega E2E test suite that validates the stack through the control-plane API and DCM CLI.
 
 ## Contents
 
@@ -20,7 +20,7 @@ Both deploy mode and `--running-versions` produce a `dcm-versions.json` mapping 
 
 ```json
 {
-  "quay.io/dcm-project/catalog-manager:latest": {
+  "quay.io/dcm-project/control-plane:latest": {
     "image_digest": "sha256:1cdf5482f586ce513724074c0a132b718672d2be5cbae600a47e94324078b01e",
     "git_sha": "2388248"
   },
@@ -35,7 +35,7 @@ Both deploy mode and `--running-versions` produce a `dcm-versions.json` mapping 
 
 `scripts/deploy-dcm.sh` automates the full DCM stack lifecycle for E2E testing:
 
-1. Clones the [api-gateway](https://github.com/dcm-project/api-gateway) repo (which owns the `compose.yaml`)
+1. Clones the [control-plane](https://github.com/dcm-project/control-plane) repo (`deploy/compose.yaml`)
 2. Starts all services with `podman-compose up`
 3. Polls health endpoints until every service responds 2xx
 4. Resolves running container images to git commit SHAs via the Quay.io API
@@ -80,7 +80,7 @@ Run `./scripts/deploy-dcm.sh --help` for all flags and environment variable over
 
 ## E2E Tests
 
-The test suite uses [Ginkgo](https://onsi.github.io/ginkgo/) and [Gomega](https://onsi.github.io/gomega/) to validate the full DCM stack through the API gateway and the DCM CLI.
+The test suite uses [Ginkgo](https://onsi.github.io/ginkgo/) and [Gomega](https://onsi.github.io/gomega/) to validate the full DCM stack through the control-plane API and the DCM CLI.
 
 ### Quick Start
 
@@ -119,7 +119,7 @@ make help
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DCM_GATEWAY_URL` | `http://localhost:9080/api/v1alpha1` | API gateway base URL |
+| `DCM_GATEWAY_URL` | `http://localhost:8080/api/v1alpha1` | Control plane API base URL |
 | `DCM_CONTAINER_SP_URL` | `http://localhost:8082/api/v1alpha1` | Container SP direct URL (requires published port) |
 | `DCM_ACM_CLUSTER_SP_URL` | `http://localhost:8083/api/v1alpha1` | ACM Cluster SP direct URL (requires published port) |
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS server URL for status event tests |
@@ -136,7 +136,7 @@ The test harness (`tests/run-e2e.sh`) supports additional flags for fine-grained
 ./tests/run-e2e.sh --skip-cli                 # Skip CLI binary resolution
 ./tests/run-e2e.sh --dcm-cli-path ~/bin/dcm   # Use a specific CLI binary
 ./tests/run-e2e.sh --label-filter smoke        # Run only smoke tests
-./tests/run-e2e.sh --gateway-url http://...    # Override gateway URL
+./tests/run-e2e.sh --gateway-url http://...    # Override control plane API URL
 ./tests/run-e2e.sh --junit-report results.xml  # Write JUnit XML report
 
 # Service provider tests

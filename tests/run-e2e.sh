@@ -28,15 +28,15 @@ Options:
   --skip-teardown              Leave the stack running after tests
   --skip-cli                   Skip CLI binary resolution (CLI tests will be skipped)
   --dcm-cli-path PATH          Path to pre-built dcm binary (skips resolution)
-  --gateway-url URL            Override DCM_GATEWAY_URL (default: http://localhost:9080/api/v1alpha1)
+  --gateway-url URL            Override DCM_GATEWAY_URL (default: http://localhost:8080/api/v1alpha1)
   --label-filter EXPR          Ginkgo label filter (e.g. "smoke", "cli")
   --junit-report FILE          Write JUnit XML report to FILE
   --help                       Show this help message
 
 Deploy passthrough flags (forwarded to deploy-dcm.sh):
-  --api-gateway-branch REF     Branch to clone
-  --api-gateway-dir PATH       Directory to clone into
-  --api-gateway-repo URL       Git repo for api-gateway
+  --control-plane-branch REF     Branch to clone
+  --control-plane-dir PATH       Directory to clone into
+  --control-plane-repo URL       Git repo for control-plane
   --cleanup-on-failure         Tear down on deployment failure
 
 Service provider flags (forwarded to deploy-dcm.sh):
@@ -58,7 +58,7 @@ Environment variables:
   DCM_CONTAINER_SP_URL     Container SP direct URL (default: http://localhost:8082/api/v1alpha1)
   DCM_ACM_CLUSTER_SP_URL   ACM Cluster SP direct URL (default: http://localhost:8083/api/v1alpha1)
   DCM_NATS_URL             NATS URL for event tests (default: nats://localhost:4222)
-  DCM_GATEWAY_URL          Gateway URL (default: http://localhost:9080/api/v1alpha1)
+  DCM_GATEWAY_URL          Control plane API URL (default: http://localhost:8080/api/v1alpha1)
 
 CLI binary resolution order:
   1. --dcm-cli-path flag or DCM_CLI_PATH env var
@@ -72,7 +72,7 @@ Examples:
   $(basename "$0") --skip-deploy --label-filter smoke
   $(basename "$0") --dcm-cli-path ~/git/dcm/cli/bin/dcm
   $(basename "$0") --skip-cli --label-filter '!cli'
-  $(basename "$0") --api-gateway-branch feature-x --skip-teardown
+  $(basename "$0") --control-plane-branch feature-x --skip-teardown
   $(basename "$0") --k8s-container-service-provider --cluster-api https://api.example.com:6443
   $(basename "$0") --skip-deploy --label-filter "sp && container"
 EOF
@@ -183,7 +183,7 @@ while [[ $# -gt 0 ]]; do
         --junit-report)
             JUNIT_REPORT="$2"
             shift 2 ;;
-        --api-gateway-branch|--api-gateway-dir|--api-gateway-repo)
+        --control-plane-branch|--control-plane-dir|--control-plane-repo)
             DEPLOY_ARGS+=("$1" "$2")
             shift 2 ;;
         --cleanup-on-failure)

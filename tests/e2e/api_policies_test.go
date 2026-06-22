@@ -34,7 +34,7 @@ var _ = Describe("Policies API", func() {
 				"policy_type": "GLOBAL",
 				"priority": 100,
 				"description": "Created by E2E test suite",
-				"rego_code": "package authz\ndefault allow = true"
+				"rego_code": "package authz\n\nmain := {\"rejected\": false}"
 			}`, policyDisplayName)
 
 			resp, err := doRequest(http.MethodPost, "/policies", payload)

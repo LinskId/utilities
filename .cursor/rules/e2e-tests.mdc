@@ -12,11 +12,11 @@ Files follow `{layer}_{subject}_test.go` with a matching `{layer}_helpers_test.g
 
 | Prefix | Interface | Helpers |
 |--------|-----------|---------|
-| `api_` | Gateway HTTP API (`doRequest` → `localhost:9080`) | `api_helpers_test.go` |
+| `api_` | Control plane HTTP API (`doRequest` → `localhost:8080`) | `api_helpers_test.go` |
 | `cli_` | CLI binary (`runDCM` → `os/exec`) | `cli_helpers_test.go` |
 | `sp_container_` | Container SP direct API + NATS (`doContainerSPRequest` → `localhost:8082`) | `sp_helpers_test.go` |
 | `sp_acm_cluster_` | ACM Cluster SP direct API (`doAcmClusterSPRequest` → `localhost:8083`) | `sp_acm_cluster_helpers_test.go` |
-| `core_` | Cross-service provisioning flow via gateway (`doRequest`) | `api_helpers_test.go`, `sp_helpers_test.go` |
+| `core_` | Cross-service provisioning flow via control plane (`doRequest`) | `api_helpers_test.go`, `sp_helpers_test.go` |
 
 When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. `sp_kubevirt_api_test.go`). Each provider gets its own helpers file (`sp_{provider}_helpers_test.go`). Shared infrastructure (kubectl, podman, NATS collector) stays in `sp_helpers_test.go`.
 
@@ -37,7 +37,7 @@ When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. 
 ## Environment Variables
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DCM_GATEWAY_URL` | `http://localhost:9080/api/v1alpha1` | Gateway API |
+| `DCM_GATEWAY_URL` | `http://localhost:8080/api/v1alpha1` | Control plane API |
 | `DCM_CONTAINER_SP_URL` | `http://localhost:8082/api/v1alpha1` | Container SP direct API |
 | `DCM_ACM_CLUSTER_SP_URL` | `http://localhost:8083/api/v1alpha1` | ACM Cluster SP direct API |
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS for status events |

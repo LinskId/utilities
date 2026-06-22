@@ -49,7 +49,7 @@ var _ = Describe("Rehydration Persistence", Label("rehydration", "disruptive"), 
 		restartSPRM()
 
 		Eventually(func() error {
-			resp, err := doRequest(http.MethodGet, "/health/providers", "")
+			resp, err := doRequest(http.MethodGet, "/health", "")
 			if err != nil {
 				return err
 			}

@@ -51,35 +51,28 @@ oc get crd virtualmachines.kubevirt.io
 ### Containers fail to start
 ```bash
 # Check container status
-podman-compose -f /tmp/dcm-e2e/compose.yaml ps
+podman-compose -f /tmp/dcm-e2e/deploy/compose.yaml ps
 
 # View logs for a failing service
-podman-compose -f /tmp/dcm-e2e/compose.yaml logs --tail=50 <service-name>
+podman-compose -f /tmp/dcm-e2e/deploy/compose.yaml logs --tail=50 <service-name>
 
 # Check for port conflicts
-podman ps --format '{{.Ports}}' | grep 9080
+podman ps --format '{{.Ports}}' | grep 8080
 ```
 
 ### Health check timeouts
 ```bash
 # Manual health check
-curl -v http://localhost:9080/api/v1alpha1/health/providers
+curl -v http://localhost:8080/api/v1alpha1/health
 
-# All health endpoints
-for ep in providers catalog policies placement; do
-  echo -n "$ep: "
-  curl -s -o /dev/null -w "%{http_code}" "http://localhost:9080/api/v1alpha1/health/$ep"
-  echo
-done
-
-# Check gateway logs
-podman-compose -f /tmp/dcm-e2e/compose.yaml logs --tail=50 api-gateway
+# Check control-plane logs
+podman-compose -f /tmp/dcm-e2e/deploy/compose.yaml logs --tail=50 control-plane
 ```
 
 ### Compose file not found
 ```bash
 # Verify clone worked
-ls -la /tmp/dcm-e2e/compose.yaml
+ls -la /tmp/dcm-e2e/deploy/compose.yaml
 
 # Re-deploy (cleans and re-clones)
 ./scripts/deploy-dcm.sh
@@ -87,8 +80,8 @@ ls -la /tmp/dcm-e2e/compose.yaml
 
 ### Port already in use
 ```bash
-# Find what's using port 9080
-lsof -i :9080
+# Find what's using port 8080
+lsof -i :8080
 
 # Tear down and redeploy
 ./scripts/deploy-dcm.sh --tear-down
@@ -99,13 +92,13 @@ lsof -i :9080
 
 ```bash
 # All container status
-podman-compose -f /tmp/dcm-e2e/compose.yaml ps
+podman-compose -f /tmp/dcm-e2e/deploy/compose.yaml ps
 
 # Recent container logs (all services)
-podman-compose -f /tmp/dcm-e2e/compose.yaml logs --tail=20
+podman-compose -f /tmp/dcm-e2e/deploy/compose.yaml logs --tail=20
 
 # Specific service logs
-podman-compose -f /tmp/dcm-e2e/compose.yaml logs --tail=50 <service>
+podman-compose -f /tmp/dcm-e2e/deploy/compose.yaml logs --tail=50 <service>
 
 # Container resource usage
 podman stats --no-stream

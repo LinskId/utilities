@@ -11,7 +11,7 @@ Query running DCM containers and resolve their image digests to git commit SHAs.
 
 ### Custom deploy directory
 ```bash
-./scripts/deploy-dcm.sh --api-gateway-dir /path/to/deploy --running-versions
+./scripts/deploy-dcm.sh --control-plane-dir /path/to/deploy --running-versions
 ```
 
 ## Prerequisites
@@ -25,7 +25,7 @@ Writes `dcm-versions.json` to the current directory. Example:
 
 ```json
 {
-  "quay.io/dcm-project/catalog-manager:latest": {
+  "quay.io/dcm-project/control-plane:latest": {
     "image_digest": "sha256:1cdf5482f586...",
     "git_sha": "2388248"
   },

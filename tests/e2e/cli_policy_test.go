@@ -25,7 +25,10 @@ priority: 100
 description: Created by E2E test suite
 rego_code: |
   package authz
-  default allow = true
+
+  main := {
+    "rejected": false
+  }
 `, policyDisplayName)
 
 		AfterAll(func() {

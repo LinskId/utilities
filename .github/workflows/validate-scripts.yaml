@@ -94,8 +94,8 @@ jobs:
 
           run_case "--help contains core flags" \
             --expect-exit "--help" 0 \
-            --expect-contains "--api-gateway-repo" "api-gateway-repo flag" \
-            --expect-contains "--api-gateway-branch" "api-gateway-branch flag" \
+            --expect-contains "--control-plane-repo" "control-plane-repo flag" \
+            --expect-contains "--control-plane-branch" "control-plane-branch flag" \
             --expect-contains "--kubeconfig" "kubeconfig flag" \
             --expect-contains "--compose-file" "compose-file flag" \
             --expect-contains "--cleanup-on-failure" "cleanup-on-failure flag" \
@@ -133,8 +133,8 @@ jobs:
           run_case "--kubeconfig requires a value" \
             --expect-exit "--kubeconfig" 1
 
-          run_case "--api-gateway-repo requires a value" \
-            --expect-exit "--api-gateway-repo" 1
+          run_case "--control-plane-repo requires a value" \
+            --expect-exit "--control-plane-repo" 1
 
           run_case "--compose-file requires a value" \
             --expect-exit "--compose-file" 1

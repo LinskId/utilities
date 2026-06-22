@@ -2,36 +2,32 @@
 set -euo pipefail
 
 # DCM E2E Deploy Script
-# Clones the api-gateway repo, brings up the full DCM stack via podman-compose,
+# Clones the control-plane repo, brings up the full DCM stack via podman-compose,
 # and verifies all services are healthy.
 #
 # Service providers are configured via providers/*.conf files. To add a new
 # provider, drop a .conf file in the providers/ directory — no changes to
 # this script are required.
 
-readonly DEFAULT_API_GATEWAY_REPO="https://github.com/dcm-project/api-gateway.git"
-readonly DEFAULT_API_GATEWAY_BRANCH="main"
-readonly DEFAULT_API_GATEWAY_TMP_DIR="/tmp/dcm-e2e"
-readonly GATEWAY_PORT="9080"
+readonly DEFAULT_CONTROL_PLANE_REPO="https://github.com/dcm-project/control-plane.git"
+readonly DEFAULT_CONTROL_PLANE_BRANCH="main"
+readonly DEFAULT_CONTROL_PLANE_TMP_DIR="/tmp/dcm-e2e"
+export COMPOSE_PROJECT_NAME="dcm-e2e"
+readonly CONTROL_PLANE_PORT="8080"
 readonly HEALTH_TIMEOUT_SECONDS=90
 readonly HEALTH_POLL_INTERVAL=5
 
 readonly HEALTH_ENDPOINTS=(
-    "/api/v1alpha1/health/providers"
-    "/api/v1alpha1/health/catalog"
-    "/api/v1alpha1/health/policies"
-    "/api/v1alpha1/health/placement"
+    "/api/v1alpha1/health"
 )
 
 readonly DEFAULT_ACM_CLUSTER_SP_REPO="https://github.com/dcm-project/acm-cluster-service-provider.git"
 readonly DEFAULT_ACM_CLUSTER_SP_BRANCH="main"
 
-readonly QUAY_VERSION_REPO="catalog-manager"
+readonly QUAY_VERSION_REPO="control-plane"
 readonly VERSION_ENV_VARS=(
-    SERVICE_PROVIDER_MANAGER_VERSION
-    CATALOG_MANAGER_VERSION
-    POLICY_MANAGER_VERSION
-    PLACEMENT_MANAGER_VERSION
+    CONTROL_PLANE_VERSION
+    DCM_UI_VERSION
     KUBEVIRT_SERVICE_PROVIDER_VERSION
     K8S_CONTAINER_SERVICE_PROVIDER_VERSION
     ACM_CLUSTER_SERVICE_PROVIDER_VERSION
@@ -111,14 +107,14 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Deploy the full DCM stack for E2E testing. The api-gateway repo contains the
-compose.yaml that orchestrates all DCM services (managers, gateway, infra).
+Deploy the full DCM stack for E2E testing. The control-plane repo contains
+deploy/compose.yaml, which orchestrates the monolith, UI, infra, and providers.
 
 Options:
   --version TAG                  Pin all DCM images to TAG (main, release, or explicit e.g. v0.1.0-rc.1)
-  --api-gateway-repo URL         Git repo for api-gateway (default: ${DEFAULT_API_GATEWAY_REPO})
-  --api-gateway-branch REF       Branch to clone (default: ${DEFAULT_API_GATEWAY_BRANCH})
-  --api-gateway-dir PATH         Directory to clone api-gateway into (default: ${DEFAULT_API_GATEWAY_TMP_DIR})
+  --control-plane-repo URL       Git repo for control-plane (default: ${DEFAULT_CONTROL_PLANE_REPO})
+  --control-plane-branch REF     Branch to clone (default: ${DEFAULT_CONTROL_PLANE_BRANCH})
+  --control-plane-dir PATH       Directory to clone control-plane into (default: ${DEFAULT_CONTROL_PLANE_TMP_DIR})
   --all-service-providers        Enable all available service providers
 EOF
 
@@ -161,9 +157,9 @@ Cluster authentication (when any service provider is enabled):
 
 Environment variables (flags take precedence):
   DCM_VERSION               Same as --version
-  API_GATEWAY_REPO          Same as --api-gateway-repo
-  API_GATEWAY_BRANCH        Same as --api-gateway-branch
-  API_GATEWAY_TMP_DIR       Same as --api-gateway-dir
+  CONTROL_PLANE_REPO        Same as --control-plane-repo
+  CONTROL_PLANE_BRANCH      Same as --control-plane-branch
+  CONTROL_PLANE_TMP_DIR     Same as --control-plane-dir
   KUBECONFIG                Same as --kubeconfig
   OPENSHIFT_API             Same as --cluster-api
   OPENSHIFT_USERNAME        Same as --cluster-username (default: kubeadmin)
@@ -186,7 +182,7 @@ Examples:
   $(basename "$0")
   $(basename "$0") --version v0.1.0-rc.1
   $(basename "$0") --version release
-  $(basename "$0") --api-gateway-branch feature-x
+  $(basename "$0") --control-plane-branch feature-x
   $(basename "$0") --kubevirt-service-provider --kubeconfig ~/.kube/config
   $(basename "$0") --k8s-container-service-provider
   $(basename "$0") --all-service-providers --cluster-api https://api.cluster.example.com --cluster-password secret
@@ -268,10 +264,9 @@ tear_down() {
 
     if [[ -d "${deploy_dir}" ]]; then
         info "Stopping containers and removing volumes..."
-        podman-compose -f "${deploy_dir}/compose.yaml" ${compose_profiles[@]+"${compose_profiles[@]}"} down -v 2>/dev/null || true
+        podman-compose -f "${deploy_dir}/deploy/compose.yaml" ${compose_profiles[@]+"${compose_profiles[@]}"} down -v 2>/dev/null || true
 
-        local project_name
-        project_name=$(basename "${deploy_dir}")
+        local project_name="${COMPOSE_PROJECT_NAME}"
         local remaining
         remaining=$(podman ps -a --filter "name=${project_name}_" --format '{{.ID}}' 2>/dev/null || true)
         if [[ -n "${remaining}" ]]; then
@@ -441,7 +436,7 @@ verify_health() {
 
     info "Polling health endpoints (timeout: ${HEALTH_TIMEOUT_SECONDS}s)..."
 
-    local gateway_url="http://localhost:${GATEWAY_PORT}"
+    local control_plane_url="http://localhost:${CONTROL_PLANE_PORT}"
     local health_failures=()
 
     for endpoint in "${HEALTH_ENDPOINTS[@]}"; do
@@ -450,7 +445,7 @@ verify_health() {
 
         while [[ ${attempt_elapsed} -lt ${HEALTH_TIMEOUT_SECONDS} ]]; do
             local http_code
-            http_code=$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "${gateway_url}${endpoint}" 2>/dev/null || echo "000")
+            http_code=$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "${control_plane_url}${endpoint}" 2>/dev/null || echo "000")
             if [[ "${http_code}" =~ ^2[0-9]{2}$ ]]; then
                 healthy=true
                 break
@@ -531,7 +526,7 @@ get_running_versions() {
 
     if [[ ! -f "${compose_file}" ]]; then
         err "Compose file not found: ${compose_file}"
-        err "Is the DCM stack deployed? Use --api-gateway-dir to specify the deploy directory."
+        err "Is the DCM stack deployed? Use --control-plane-dir to specify the deploy directory."
         return 1
     fi
 
@@ -629,11 +624,11 @@ collect_provider_compose() {
 # --- Argument parsing ------------------------------------------------------ #
 
 DCM_VERSION="${DCM_VERSION:-}"
-API_GATEWAY_REPO="${API_GATEWAY_REPO:-${DEFAULT_API_GATEWAY_REPO}}"
-API_GATEWAY_BRANCH_EXPLICIT=false
-[[ -n "${API_GATEWAY_BRANCH:-}" ]] && API_GATEWAY_BRANCH_EXPLICIT=true
-API_GATEWAY_BRANCH="${API_GATEWAY_BRANCH:-${DEFAULT_API_GATEWAY_BRANCH}}"
-API_GATEWAY_TMP_DIR="${API_GATEWAY_TMP_DIR:-${DEFAULT_API_GATEWAY_TMP_DIR}}"
+CONTROL_PLANE_REPO="${CONTROL_PLANE_REPO:-${DEFAULT_CONTROL_PLANE_REPO}}"
+CONTROL_PLANE_BRANCH_EXPLICIT=false
+[[ -n "${CONTROL_PLANE_BRANCH:-}" ]] && CONTROL_PLANE_BRANCH_EXPLICIT=true
+CONTROL_PLANE_BRANCH="${CONTROL_PLANE_BRANCH:-${DEFAULT_CONTROL_PLANE_BRANCH}}"
+CONTROL_PLANE_TMP_DIR="${CONTROL_PLANE_TMP_DIR:-${DEFAULT_CONTROL_PLANE_TMP_DIR}}"
 TEAR_DOWN=false
 RUNNING_VERSIONS=false
 CLEANUP_ON_FAILURE=false
@@ -682,16 +677,16 @@ while [[ $# -gt 0 ]]; do
         --version)
             require_arg "$1" "${2:-}"
             DCM_VERSION="${2:-}"; shift 2 ;;
-        --api-gateway-repo)
+        --control-plane-repo)
             require_arg "$1" "${2:-}"
-            API_GATEWAY_REPO="${2:-}"; shift 2 ;;
-        --api-gateway-branch)
+            CONTROL_PLANE_REPO="${2:-}"; shift 2 ;;
+        --control-plane-branch)
             require_arg "$1" "${2:-}"
-            API_GATEWAY_BRANCH="${2:-}"
-            API_GATEWAY_BRANCH_EXPLICIT=true; shift 2 ;;
-        --api-gateway-dir)
+            CONTROL_PLANE_BRANCH="${2:-}"
+            CONTROL_PLANE_BRANCH_EXPLICIT=true; shift 2 ;;
+        --control-plane-dir)
             require_arg "$1" "${2:-}"
-            API_GATEWAY_TMP_DIR="${2:-}"; shift 2 ;;
+            CONTROL_PLANE_TMP_DIR="${2:-}"; shift 2 ;;
         --all-service-providers)
             for i in $(seq 0 $((PROV_COUNT - 1))); do
                 PROV_ENABLED[i]=true
@@ -754,7 +749,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-validate_deploy_dir "${API_GATEWAY_TMP_DIR}" || exit 1
+validate_deploy_dir "${CONTROL_PLANE_TMP_DIR}" || exit 1
 
 # --- Build compose args from enabled providers ----------------------------- #
 
@@ -778,13 +773,13 @@ done
 if [[ "${RUNNING_VERSIONS}" == true ]]; then
     check_required_tools podman podman-compose curl jq || exit 1
     ensure_podman_running || exit 1
-    get_running_versions "${API_GATEWAY_TMP_DIR}/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} || exit 1
+    get_running_versions "${CONTROL_PLANE_TMP_DIR}/deploy/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} || exit 1
     exit 0
 fi
 
 if [[ "${TEAR_DOWN}" == true ]]; then
     ensure_podman_running || exit 1
-    tear_down "${API_GATEWAY_TMP_DIR}" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"}
+    tear_down "${CONTROL_PLANE_TMP_DIR}" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"}
     exit 0
 fi
 
@@ -1051,10 +1046,10 @@ if [[ -n "${DCM_VERSION}" ]]; then
         info "Resolved: ${DCM_VERSION}"
     fi
 
-    if [[ "${DCM_VERSION}" != "main" ]] && [[ "${API_GATEWAY_BRANCH_EXPLICIT}" == false ]]; then
+    if [[ "${DCM_VERSION}" != "main" ]] && [[ "${CONTROL_PLANE_BRANCH_EXPLICIT}" == false ]]; then
         RELEASE_TAG="${DCM_VERSION%%-*}"
-        API_GATEWAY_BRANCH="release/${RELEASE_TAG}"
-        info "Auto-derived api-gateway branch: ${API_GATEWAY_BRANCH}"
+        CONTROL_PLANE_BRANCH="release/${RELEASE_TAG}"
+        info "Auto-derived control-plane branch: ${CONTROL_PLANE_BRANCH}"
     fi
 
     log "Pinning all DCM images to version: ${DCM_VERSION}"
@@ -1065,21 +1060,21 @@ fi
 
 # --- Clone ----------------------------------------------------------------- #
 
-log "Preparing deploy directory: ${API_GATEWAY_TMP_DIR}"
+log "Preparing deploy directory: ${CONTROL_PLANE_TMP_DIR}"
 
-if [[ -d "${API_GATEWAY_TMP_DIR}" ]]; then
+if [[ -d "${CONTROL_PLANE_TMP_DIR}" ]]; then
     info "Cleaning existing deploy directory..."
-    podman-compose -f "${API_GATEWAY_TMP_DIR}/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} down -v 2>/dev/null || true
-    rm -rf "${API_GATEWAY_TMP_DIR}"
+    podman-compose -f "${CONTROL_PLANE_TMP_DIR}/deploy/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} down -v 2>/dev/null || true
+    rm -rf "${CONTROL_PLANE_TMP_DIR}"
 fi
 
-log "Cloning api-gateway (repo=${API_GATEWAY_REPO}, branch=${API_GATEWAY_BRANCH})"
-git clone --branch "${API_GATEWAY_BRANCH}" --single-branch --depth 1 "${API_GATEWAY_REPO}" "${API_GATEWAY_TMP_DIR}"
+log "Cloning control-plane (repo=${CONTROL_PLANE_REPO}, branch=${CONTROL_PLANE_BRANCH})"
+git clone --branch "${CONTROL_PLANE_BRANCH}" --single-branch --depth 1 "${CONTROL_PLANE_REPO}" "${CONTROL_PLANE_TMP_DIR}"
 
 # --- Deploy ---------------------------------------------------------------- #
 
 if [[ "${CLEANUP_ON_FAILURE}" == true ]]; then
-    trap 'err "Deploy failed — cleaning up"; tear_down "${API_GATEWAY_TMP_DIR}" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"}' ERR
+    trap 'err "Deploy failed — cleaning up"; tear_down "${CONTROL_PLANE_TMP_DIR}" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"}' ERR
 fi
 
 log "Starting DCM stack"
@@ -1090,20 +1085,20 @@ done
 if [[ ${#ENABLED_LABELS[@]} -gt 0 ]]; then
     info "Enabled providers: ${ENABLED_LABELS[*]}"
 fi
-podman-compose -f "${API_GATEWAY_TMP_DIR}/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} up -d
+podman-compose -f "${CONTROL_PLANE_TMP_DIR}/deploy/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} up -d
 
 echo
 log "Container status"
-podman-compose -f "${API_GATEWAY_TMP_DIR}/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} ps
+podman-compose -f "${CONTROL_PLANE_TMP_DIR}/deploy/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} ps
 
-verify_health "${API_GATEWAY_TMP_DIR}/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} || exit 1
+verify_health "${CONTROL_PLANE_TMP_DIR}/deploy/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} || exit 1
 
-get_running_versions "${API_GATEWAY_TMP_DIR}/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} || info "Version collection failed (non-fatal)"
+get_running_versions "${CONTROL_PLANE_TMP_DIR}/deploy/compose.yaml" ${COMPOSE_EXTRA_FILE_ARGS[@]+"${COMPOSE_EXTRA_FILE_ARGS[@]}"} ${COMPOSE_PROFILES[@]+"${COMPOSE_PROFILES[@]}"} || info "Version collection failed (non-fatal)"
 
-GATEWAY_URL="http://localhost:${GATEWAY_PORT}"
+GATEWAY_URL="http://localhost:${CONTROL_PLANE_PORT}"
 log "DCM stack is up and healthy at ${GATEWAY_URL}"
-if [[ "${API_GATEWAY_TMP_DIR}" != "${DEFAULT_API_GATEWAY_TMP_DIR}" ]]; then
-    info "To tear down: $(basename "$0") --api-gateway-dir ${API_GATEWAY_TMP_DIR} --tear-down"
+if [[ "${CONTROL_PLANE_TMP_DIR}" != "${DEFAULT_CONTROL_PLANE_TMP_DIR}" ]]; then
+    info "To tear down: $(basename "$0") --control-plane-dir ${CONTROL_PLANE_TMP_DIR} --tear-down"
 else
     info "To tear down: $(basename "$0") --tear-down"
 fi

@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const defaultGatewayURL = "http://localhost:9080/api/v1alpha1"
+const defaultGatewayURL = "http://localhost:8080/api/v1alpha1"
 
 var (
 	gatewayBaseURL string
@@ -35,7 +35,7 @@ var _ = BeforeSuite(func() {
 
 	// Wait for the stack to be reachable before running any tests.
 	Eventually(func() error {
-		resp, err := httpClient.Get(gatewayBaseURL + "/health/providers")
+		resp, err := httpClient.Get(gatewayBaseURL + "/health")
 		if err != nil {
 			return err
 		}

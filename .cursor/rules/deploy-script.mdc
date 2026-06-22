@@ -13,7 +13,7 @@ See `CLAUDE.md` → "Key Script: scripts/deploy-dcm.sh" for the full description
 - New functions go above the argument parsing section
 - New flags need entries in both `usage()` and the `while/case` loop
 - Add corresponding environment variable overrides where appropriate
-- Compose variable names (`KUBEVIRT_KUBECONFIG`, `K8S_CONTAINER_SP_KUBECONFIG`, etc.) are owned by api-gateway's compose.yaml — see the contract comment at the top of the script
+- Compose variable names (`KUBEVIRT_KUBECONFIG`, `K8S_CONTAINER_SP_KUBECONFIG`, etc.) are owned by control-plane's `deploy/compose.yaml` — see the contract comment at the top of the script
 - Run `shellcheck scripts/deploy-dcm.sh` after changes
 
 ## Podman / Compose

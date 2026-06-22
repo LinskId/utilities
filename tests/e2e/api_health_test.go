@@ -10,23 +10,15 @@ import (
 )
 
 var _ = Describe("Health Endpoints", Label("smoke"), func() {
-	healthEndpoints := map[string]string{
-		"providers": "/health/providers",
-		"catalog":   "/health/catalog",
-		"policies":  "/health/policies",
-		"placement": "/health/placement",
-	}
+	It("reports healthy control-plane", func() {
+		resp, err := doRequest(http.MethodGet, "/health", "")
+		Expect(err).NotTo(HaveOccurred())
 
-	for serviceName, path := range healthEndpoints {
-		It("reports healthy "+serviceName, func() {
-			resp, err := doRequest(http.MethodGet, path, "")
-			Expect(err).NotTo(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var body map[string]interface{}
-			decodeJSON(resp, &body)
-			Expect(body).To(HaveKeyWithValue("status", "ok"))
-		})
-	}
+		var body map[string]interface{}
+		decodeJSON(resp, &body)
+		Expect(body).To(HaveKeyWithValue("status", "ok"))
+		Expect(body).To(HaveKeyWithValue("path", "/api/v1alpha1/health"))
+	})
 })

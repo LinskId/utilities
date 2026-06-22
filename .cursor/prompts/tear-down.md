@@ -11,7 +11,7 @@ Stop and clean up a running DCM deployment.
 
 ### Custom deploy directory
 ```bash
-./scripts/deploy-dcm.sh --api-gateway-dir /path/to/deploy --tear-down
+./scripts/deploy-dcm.sh --control-plane-dir /path/to/deploy --tear-down
 ```
 
 ## What Happens

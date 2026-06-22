@@ -26,9 +26,9 @@ CI runs ShellCheck on changed `*.sh` files via `.github/workflows/lint.yaml` (on
 
 ## Key Script: `scripts/deploy-dcm.sh`
 
-Deploys the full DCM stack for E2E testing by cloning api-gateway (which owns `compose.yaml`), running `podman-compose up`, and polling health endpoints until all services respond 2xx.
+Deploys the full DCM stack for E2E testing by cloning control-plane (`deploy/compose.yaml`), running `podman-compose up`, and polling health endpoints until all services respond 2xx.
 
-**Flow:** clone api-gateway → `podman-compose up -d` → verify containers running → poll `/api/v1alpha1/health/*` endpoints → collect container versions from Quay.io API → write `dcm-versions.json`.
+**Flow:** clone control-plane → `podman-compose up -d` → verify containers running → poll `/api/v1alpha1/health` → collect container versions from Quay.io API → write `dcm-versions.json`.
 
 **Modes:** The script has three mutually exclusive modes:
 - **Deploy** (default): full clone + bring-up + health check. Pass `--cleanup-on-failure` to auto-teardown on error (default leaves partial state for debugging).
@@ -40,7 +40,7 @@ Deploys the full DCM stack for E2E testing by cloning api-gateway (which owns `c
 - `--version v0.1.0-rc.1` — pin all images to an explicit tag
 - `--version release` — auto-resolve the latest semver tag from Quay.io
 
-When a non-main version is specified, `--api-gateway-branch` is auto-derived to the corresponding release branch (e.g. `v0.1.0-rc.1` → `release/v0.1.0`) unless explicitly passed.
+When a non-main version is specified, `--control-plane-branch` is auto-derived to the corresponding release branch (e.g. `v0.1.0-rc.1` → `release/v0.1.0`) unless explicitly passed.
 
 **Service providers:** Configured via `providers/*.conf` files (see "Provider Registry" below). Enable with `--<label>-service-provider` or `--all-service-providers`.
 
@@ -58,7 +58,7 @@ Service providers are defined declaratively in `providers/*.conf` files. Each co
 |-----|---------|
 | `PROVIDER_LABEL` | Short name for display and flag generation |
 | `PROVIDER_FLAG` | CLI flag name (e.g. `kubevirt-service-provider`) |
-| `COMPOSE_PROFILE` | Compose profile name from api-gateway (if applicable) |
+| `COMPOSE_PROFILE` | Compose profile name from control-plane deploy compose (if applicable) |
 | `COMPOSE_OVERRIDE` | Compose override file relative to repo root (if applicable) |
 | `CLI_REQUIREMENT` | CLI tool needed: `oc`, `oc-or-kubectl`, or empty |
 | `NAMESPACE_FLAG` / `NAMESPACE_ENV` / `NAMESPACE_DEFAULT` | Namespace configuration |
@@ -172,7 +172,7 @@ All test targets support JUnit XML output: `make test-e2e JUNIT_REPORT=results.x
 | Layer | What it tests | Label |
 |-------|--------------|-------|
 | **Core platform tests** | Full provisioning flow through control plane | `core`, `platform` |
-| **API tests** | HTTP CRUD operations against the gateway | (none) |
+| **API tests** | HTTP CRUD operations against the control plane | (none) |
 | **SP tests** | Container SP direct API + NATS status events | `sp`, `container` |
 | **ACM SP tests** | ACM Cluster SP API (health, registration, validation, CRUD) | `sp`, `acm-cluster` |
 | **Cluster tests** | Tests requiring `kubectl`/`oc` cluster access | `cluster` |
@@ -197,7 +197,7 @@ CLI tests are skipped (not failed) if no binary is available.
 - All test files use `//go:build e2e` build tag
 - API tests use raw `net/http` (no generated clients) for independence from service repos
 - CLI tests use `os/exec` to run the actual binary (not in-process Cobra)
-- `DCM_GATEWAY_URL` env var overrides the gateway endpoint (default: `http://localhost:9080/api/v1alpha1`)
+- `DCM_GATEWAY_URL` env var overrides the control plane API endpoint (default: `http://localhost:8080/api/v1alpha1`)
 - `DCM_CONTAINER_SP_URL` env var overrides the container SP endpoint (default: `http://localhost:8082/api/v1alpha1`)
 - `DCM_ACM_CLUSTER_SP_URL` env var overrides the ACM cluster SP endpoint (default: `http://localhost:8083/api/v1alpha1`)
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
