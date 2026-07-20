@@ -47,12 +47,17 @@ type ThreeTierProvider struct {
 // --- Catalog item setup ---------------------------------------------------- //
 
 var rehydrationCatalogItemID string
+var rehydrationResourceName string
 
 func initRehydrationCatalogItem() {
 	catalogItemID := os.Getenv("DCM_CATALOG_ITEM_ID")
 	if catalogItemID != "" {
 		rehydrationCatalogItemID = catalogItemID
-		GinkgoWriter.Printf("Using catalog item ID from env: %s\n", catalogItemID)
+		rehydrationResourceName = os.Getenv("DCM_RESOURCE_NAME")
+		if rehydrationResourceName == "" {
+			rehydrationResourceName = "pet-clinic"
+		}
+		GinkgoWriter.Printf("Using catalog item ID from env: %s (resource=%s)\n", catalogItemID, rehydrationResourceName)
 		return
 	}
 
@@ -68,27 +73,39 @@ func initRehydrationCatalogItem() {
 	for _, r := range results {
 		item, _ := r.(map[string]interface{})
 		spec, _ := item["spec"].(map[string]interface{})
-		st, _ := spec["service_type"].(string)
-		if st == "three-tier-app-demo" || st == "three_tier_app_demo" {
-			rehydrationCatalogItemID = stringField(item, "uid")
-			GinkgoWriter.Printf("Rehydration catalog item ID: %s (service_type=%s, display_name=%s)\n",
-				rehydrationCatalogItemID, st, stringField(item, "display_name"))
-			return
+
+		// Check multi-resource schema (spec.resources[].service_type)
+		if resources, ok := spec["resources"].([]interface{}); ok {
+			for _, res := range resources {
+				resource, _ := res.(map[string]interface{})
+				st, _ := resource["service_type"].(string)
+				if st == "three-tier-app-demo" || st == "three_tier_app_demo" {
+					rehydrationCatalogItemID = stringField(item, "uid")
+					rehydrationResourceName = stringField(resource, "name")
+					GinkgoWriter.Printf("Rehydration catalog item ID: %s (service_type=%s, display_name=%s, resource=%s)\n",
+						rehydrationCatalogItemID, st, stringField(item, "display_name"), rehydrationResourceName)
+					return
+				}
+			}
 		}
 	}
 
 	GinkgoWriter.Println("No three-tier-app-demo catalog item found — creating one")
 	payload := map[string]interface{}{
-		"name":         "rehydration-pet-clinic",
 		"display_name": "Rehydration Pet Clinic",
 		"api_version":  "v1alpha1",
 		"spec": map[string]interface{}{
-			"service_type": "three-tier-app-demo",
-			"fields": []map[string]interface{}{
-				{"path": "database.engine", "display_name": "Database engine", "editable": true, "default": "postgres"},
-				{"path": "database.version", "display_name": "Database version", "editable": true, "default": "18"},
-				{"path": "app.image", "display_name": "App image", "default": "docker.io/springcommunity/spring-framework-petclinic:6.1.2"},
-				{"path": "web.image", "display_name": "Web image", "default": "docker.io/library/nginx:alpine"},
+			"resources": []map[string]interface{}{
+				{
+					"name":         "pet-clinic",
+					"service_type": "three-tier-app-demo",
+					"fields": []map[string]interface{}{
+						{"path": "database.engine", "display_name": "Database engine", "editable": true, "default": "postgres"},
+						{"path": "database.version", "display_name": "Database version", "editable": true, "default": "18"},
+						{"path": "app.image", "display_name": "App image", "default": "docker.io/springcommunity/spring-framework-petclinic:6.1.2"},
+						{"path": "web.image", "display_name": "Web image", "default": "docker.io/library/nginx:alpine"},
+					},
+				},
 			},
 		},
 	}
@@ -103,8 +120,10 @@ func initRehydrationCatalogItem() {
 	var body map[string]interface{}
 	decodeJSON(createResp, &body)
 	rehydrationCatalogItemID = stringField(body, "uid")
+	rehydrationResourceName = "pet-clinic"
 	Expect(rehydrationCatalogItemID).NotTo(BeEmpty(), "catalog item creation returned empty UID")
-	GinkgoWriter.Printf("Rehydration catalog item ID: %s\n", rehydrationCatalogItemID)
+	Expect(rehydrationResourceName).NotTo(BeEmpty(), "catalog item resource name not resolved")
+	GinkgoWriter.Printf("Rehydration catalog item ID: %s (resource=%s)\n", rehydrationCatalogItemID, rehydrationResourceName)
 }
 
 // --- Provider discovery ---------------------------------------------------- //
@@ -257,8 +276,9 @@ func createTestInstance(displayName string, userValues []map[string]string) Cata
 	uvArray := make([]map[string]interface{}, len(userValues))
 	for i, uv := range userValues {
 		uvArray[i] = map[string]interface{}{
-			"path":  uv["path"],
-			"value": uv["value"],
+			"resource": uv["resource"],
+			"path":     uv["path"],
+			"value":    uv["value"],
 		}
 	}
 
@@ -382,8 +402,8 @@ func ensureProvidersReady() {
 
 func defaultUserValues() []map[string]string {
 	return []map[string]string{
-		{"path": "database.engine", "value": "postgres"},
-		{"path": "database.version", "value": "18"},
+		{"resource": rehydrationResourceName, "path": "database.engine", "value": "postgres"},
+		{"resource": rehydrationResourceName, "path": "database.version", "value": "18"},
 	}
 }
 
