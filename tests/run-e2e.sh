@@ -87,6 +87,7 @@ err()  { echo "ERROR: $*" >&2; }
 # --- CLI binary resolution ------------------------------------------------- #
 
 download_dcm_cli() {
+    local version="${1:-main}"
     local detected_os detected_arch
 
     if ! command -v gh &>/dev/null; then
@@ -103,12 +104,21 @@ download_dcm_cli() {
     esac
 
     mkdir -p "${CLI_BIN_DIR}"
-    log "Downloading latest DCM CLI for ${detected_os}/${detected_arch}"
-    gh release download --repo "${CLI_GITHUB_REPO}" --pattern "cli_*_${detected_os}_${detected_arch}.tar.gz" --dir "${CLI_BIN_DIR}" --clobber
+    log "Downloading DCM CLI (${version}) for ${detected_os}/${detected_arch}"
+    gh release download "${version}" --repo "${CLI_GITHUB_REPO}" --pattern "cli_*_${detected_os}_${detected_arch}.tar.gz" --dir "${CLI_BIN_DIR}" --clobber
     tar -xzf "${CLI_BIN_DIR}"/cli_*_"${detected_os}"_"${detected_arch}".tar.gz -C "${CLI_BIN_DIR}" dcm
     rm -f "${CLI_BIN_DIR}"/cli_*_"${detected_os}"_"${detected_arch}".tar.gz
     chmod +x "${CLI_BIN_DIR}/dcm"
     info "Downloaded to ${CLI_BIN_DIR}/dcm"
+}
+
+log_cli_version() {
+    local cli_version_output
+    cli_version_output="$("${DCM_CLI_PATH}" version 2>&1)" || return 0
+    local ver commit
+    ver="$(echo "${cli_version_output}" | awk '/^dcm version/{sub(/^dcm version /,""); print}')"
+    commit="$(echo "${cli_version_output}" | awk '/commit:/{sub(/^ *commit: */,""); print}')"
+    info "DCM CLI ${ver} (commit ${commit})"
 }
 
 resolve_dcm_cli() {
@@ -119,31 +129,19 @@ resolve_dcm_cli() {
             return 1
         fi
         info "Using DCM CLI: ${DCM_CLI_PATH}"
+        log_cli_version
         return 0
     fi
 
-    # 2. Already in PATH.
-    if command -v dcm &>/dev/null; then
-        DCM_CLI_PATH="$(command -v dcm)"
-        info "Found DCM CLI in PATH: ${DCM_CLI_PATH}"
-        return 0
-    fi
-
-    # 3. Previously downloaded to bin/.
-    if [[ -x "${CLI_BIN_DIR}/dcm" ]]; then
+    # 2. Remove any stale binary, then download fresh.
+    rm -f "${CLI_BIN_DIR}/dcm"
+    if download_dcm_cli "${CLI_VERSION}"; then
         DCM_CLI_PATH="${CLI_BIN_DIR}/dcm"
-        info "Found DCM CLI in bin/: ${DCM_CLI_PATH}"
+        log_cli_version
         return 0
     fi
 
-    # 4. Auto-download from GitHub releases.
-    log "DCM CLI not found — attempting download from GitHub"
-    if download_dcm_cli; then
-        DCM_CLI_PATH="${CLI_BIN_DIR}/dcm"
-        return 0
-    fi
-
-    err "Could not resolve DCM CLI binary — CLI tests will be skipped"
+    err "Could not download DCM CLI — CLI tests will be skipped"
     return 1
 }
 
@@ -153,6 +151,7 @@ SKIP_DEPLOY=false
 SKIP_TEARDOWN=false
 SKIP_CLI=false
 DCM_CLI_PATH="${DCM_CLI_PATH:-}"
+CLI_VERSION="${CLI_VERSION:-main}"
 GATEWAY_URL=""
 LABEL_FILTER=""
 JUNIT_REPORT=""
@@ -173,6 +172,9 @@ while [[ $# -gt 0 ]]; do
             shift ;;
         --dcm-cli-path)
             DCM_CLI_PATH="$2"
+            shift 2 ;;
+        --cli-version)
+            CLI_VERSION="$2"
             shift 2 ;;
         --gateway-url)
             GATEWAY_URL="$2"

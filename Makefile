@@ -3,6 +3,7 @@
 # Set JUNIT_REPORT to a filename to produce JUnit XML output.
 # Example: make test-e2e JUNIT_REPORT=results.xml
 JUNIT_REPORT ?=
+CLI_VERSION ?= main
 GINKGO_BASE = go run github.com/onsi/ginkgo/v2/ginkgo -r -v --tags=e2e
 ifdef JUNIT_REPORT
 GINKGO_BASE += --junit-report=$(JUNIT_REPORT)
@@ -47,10 +48,10 @@ e2e-down: ## Tear down the DCM stack
 test-e2e-full: ## Deploy, test, and tear down (full lifecycle)
 	./tests/run-e2e.sh $(if $(JUNIT_REPORT),--junit-report $(JUNIT_REPORT))
 
-download-cli: ## Download latest DCM CLI from GitHub releases
+download-cli: ## Download DCM CLI from GitHub releases (CLI_VERSION=main)
 	@command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI required (https://cli.github.com)"; exit 1; }
 	@mkdir -p bin
-	@OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$$(uname -m); case "$$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac; echo "==> Downloading DCM CLI for $$OS/$$ARCH"; gh release download --repo dcm-project/cli --pattern "cli_*_$${OS}_$${ARCH}.tar.gz" --dir bin --clobber; tar -xzf bin/cli_*_$${OS}_$${ARCH}.tar.gz -C bin dcm; rm -f bin/cli_*_$${OS}_$${ARCH}.tar.gz; chmod +x bin/dcm; echo "    Downloaded to bin/dcm"
+	@OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$$(uname -m); case "$$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac; echo "==> Downloading DCM CLI ($(CLI_VERSION)) for $$OS/$$ARCH"; gh release download $(CLI_VERSION) --repo dcm-project/cli --pattern "cli_*_$${OS}_$${ARCH}.tar.gz" --dir bin --clobber; tar -xzf bin/cli_*_$${OS}_$${ARCH}.tar.gz -C bin dcm; rm -f bin/cli_*_$${OS}_$${ARCH}.tar.gz; chmod +x bin/dcm; echo "    Downloaded to bin/dcm"
 
 CLI_VERSION_FILE ?= dcm-cli-version.json
 cli-version: ## Write DCM CLI version info to JSON file
