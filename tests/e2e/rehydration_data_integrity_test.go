@@ -33,7 +33,7 @@ var _ = Describe("Rehydration Data Integrity", Label("rehydration", "integrity")
 
 		resp, body := rehydrateInstance(inst.UID)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		newResourceID = stringField(body, "resource_id")
+		newResourceID = firstResourceID(body)
 		Expect(newResourceID).NotTo(Equal(origResourceID))
 	})
 
@@ -179,7 +179,7 @@ var _ = Describe("Rehydration Data Integrity", Label("rehydration", "integrity")
 
 		resp1, body1 := rehydrateInstance(inst.UID)
 		Expect(resp1.StatusCode).To(Equal(http.StatusOK))
-		rid1 := stringField(body1, "resource_id")
+		rid1 := firstResourceID(body1)
 
 		resp2, body2 := rehydrateInstance(inst.UID)
 		Expect(resp2.StatusCode).To(SatisfyAny(
@@ -188,7 +188,7 @@ var _ = Describe("Rehydration Data Integrity", Label("rehydration", "integrity")
 		))
 
 		if resp2.StatusCode == http.StatusOK {
-			rid2 := stringField(body2, "resource_id")
+			rid2 := firstResourceID(body2)
 			Expect(rid2).NotTo(Equal(rid1))
 		}
 

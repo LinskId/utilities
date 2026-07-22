@@ -42,15 +42,18 @@ var _ = Describe("Service Type Instances API", func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -72,8 +75,8 @@ var _ = Describe("Service Type Instances API", func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -86,8 +89,13 @@ var _ = Describe("Service Type Instances API", func() {
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
 			Expect(instanceID).NotTo(BeEmpty())
-			resourceID, _ = instBody["resource_id"].(string)
-			Expect(resourceID).NotTo(BeEmpty(), "resource_id should be set synchronously by placement")
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
+			resourceID, _ = resourceIDs[0].(string)
+			Expect(resourceID).NotTo(BeEmpty(), "resource_ids[0] should be set synchronously by placement")
 			GinkgoWriter.Printf("Created catalog-item-instance: %s (resource_id=%s)\n", instanceID, resourceID)
 
 			By("waiting for the service-type-instance to be queryable")

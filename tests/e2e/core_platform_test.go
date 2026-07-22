@@ -123,15 +123,18 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, name, name)
 
@@ -184,8 +187,8 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, name, catalogItemID, name)
@@ -197,15 +200,18 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
 			Expect(body).To(HaveKey("uid"))
-			// resource_id is set synchronously by the catalog manager during placement delegation.
-			Expect(body).To(HaveKey("resource_id"))
 
 			uid, ok := body["uid"].(string)
 			Expect(ok).To(BeTrue(), "uid should be a string")
 			instanceID = uid
 
-			rid, ok := body["resource_id"].(string)
-			Expect(ok).To(BeTrue(), "resource_id should be a string")
+			spec, ok := body["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := spec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
+			rid, ok := resourceIDs[0].(string)
+			Expect(ok).To(BeTrue(), "resource_ids[0] should be a string")
 			resourceID = rid
 		})
 

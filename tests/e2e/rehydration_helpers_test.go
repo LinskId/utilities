@@ -245,6 +245,19 @@ func resolveProviderRegion(providerName string) string {
 	}
 }
 
+func firstResourceID(body map[string]interface{}) string {
+	spec, ok := body["spec"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	rids, ok := spec["resource_ids"].([]interface{})
+	if !ok || len(rids) == 0 {
+		return ""
+	}
+	s, _ := rids[0].(string)
+	return s
+}
+
 func requireThreeTierSP() {
 	if !threeTierSPReady {
 		Skip("No three-tier SP available (deploy with --three-tier-app-demo-service-provider)")
@@ -350,7 +363,6 @@ func parseCatalogItemInstance(resp *http.Response) CatalogItemInstance {
 
 	inst := CatalogItemInstance{
 		UID:         stringField(raw, "uid"),
-		ResourceID:  stringField(raw, "resource_id"),
 		DisplayName: stringField(raw, "display_name"),
 		APIVersion:  stringField(raw, "api_version"),
 		CreateTime:  stringField(raw, "create_time"),
@@ -359,6 +371,9 @@ func parseCatalogItemInstance(resp *http.Response) CatalogItemInstance {
 	}
 	if spec, ok := raw["spec"].(map[string]interface{}); ok {
 		inst.Spec = spec
+		if rids, ok := spec["resource_ids"].([]interface{}); ok && len(rids) > 0 {
+			inst.ResourceID, _ = rids[0].(string)
+		}
 	}
 	return inst
 }

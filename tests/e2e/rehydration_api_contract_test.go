@@ -29,7 +29,6 @@ var _ = Describe("Rehydration API Contract", Label("rehydration", "contract"), f
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 		Expect(body).To(HaveKey("uid"))
-		Expect(body).To(HaveKey("resource_id"))
 		Expect(body).To(HaveKey("spec"))
 		Expect(body).To(HaveKey("display_name"))
 		Expect(body).To(HaveKey("api_version"))
@@ -37,8 +36,13 @@ var _ = Describe("Rehydration API Contract", Label("rehydration", "contract"), f
 		Expect(body).To(HaveKey("update_time"))
 
 		Expect(stringField(body, "uid")).NotTo(BeEmpty())
-		Expect(stringField(body, "resource_id")).NotTo(BeEmpty())
 		Expect(stringField(body, "api_version")).To(Equal("v1alpha1"))
+
+		spec, ok := body["spec"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "spec should be a map")
+		rids, ok := spec["resource_ids"].([]interface{})
+		Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+		Expect(rids).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
 	})
 
 	It("404 response conforms to RFC 7807", func() {

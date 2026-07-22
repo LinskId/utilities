@@ -64,7 +64,7 @@ var _ = Describe("Rehydration Failover", Label("rehydration", "failover", "disru
 			resp, body := rehydrateInstance(instanceUID)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			newResourceID := stringField(body, "resource_id")
+			newResourceID := firstResourceID(body)
 			Expect(newResourceID).NotTo(Equal(origResourceID))
 
 			waitForInstanceRunning(newResourceID, rehydrateTimeout)
@@ -89,7 +89,7 @@ var _ = Describe("Rehydration Failover", Label("rehydration", "failover", "disru
 			resp, body := rehydrateInstance(instanceUID)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			newResourceID := stringField(body, "resource_id")
+			newResourceID := firstResourceID(body)
 			Expect(newResourceID).NotTo(Equal(preInst.ResourceID))
 
 			waitForInstanceRunning(newResourceID, rehydrateTimeout)
@@ -139,7 +139,7 @@ var _ = Describe("Rehydration Failover", Label("rehydration", "failover", "disru
 			resp, body := rehydrateInstance(inst.UID)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			newResourceID := stringField(body, "resource_id")
+			newResourceID := firstResourceID(body)
 			Expect(newResourceID).NotTo(Equal(oldResourceID))
 			waitForInstanceRunning(newResourceID, rehydrateTimeout)
 		})

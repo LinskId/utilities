@@ -79,15 +79,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -108,8 +111,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -122,8 +125,13 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
 			Expect(instanceID).NotTo(BeEmpty())
-			resourceID, _ = instBody["resource_id"].(string)
-			Expect(resourceID).NotTo(BeEmpty(), "resource_id should be set synchronously by placement")
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
+			resourceID, _ = resourceIDs[0].(string)
+			Expect(resourceID).NotTo(BeEmpty(), "resource_ids[0] should be set synchronously by placement")
 			GinkgoWriter.Printf("Status reader test: created instance %s (resource_id=%s)\n", instanceID, resourceID)
 		})
 
@@ -289,15 +297,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": %q},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": %q},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName, badImage)
 
@@ -318,8 +329,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": %q}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": %q, "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName, badImage)
@@ -332,7 +343,12 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
 			Expect(instanceID).NotTo(BeEmpty())
-			resourceID, _ = instBody["resource_id"].(string)
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty())
+			resourceID, _ = resourceIDs[0].(string)
 			Expect(resourceID).NotTo(BeEmpty())
 			GinkgoWriter.Printf("Bad image test: created instance %s (resource_id=%s)\n", instanceID, resourceID)
 		})
@@ -451,15 +467,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -481,8 +500,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 					"spec": {
 						"catalog_item_id": %q,
 						"user_values": [
-							{"path": "metadata.name", "value": %q},
-							{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+							{"path": "metadata.name", "value": %q, "resource": "main"},
+							{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 						]
 					}
 				}`, instName, catalogItemID, instName)
@@ -494,8 +513,13 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				var instBody map[string]interface{}
 				decodeJSON(resp, &instBody)
 				uid, _ := instBody["uid"].(string)
-				rid, _ := instBody["resource_id"].(string)
 				Expect(uid).NotTo(BeEmpty())
+				iSpec, ok := instBody["spec"].(map[string]interface{})
+				Expect(ok).To(BeTrue(), "spec should be a map")
+				rIDs, ok := iSpec["resource_ids"].([]interface{})
+				Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+				Expect(rIDs).NotTo(BeEmpty())
+				rid, _ := rIDs[0].(string)
 				Expect(rid).NotTo(BeEmpty())
 				instanceIDs = append(instanceIDs, uid)
 				resourceIDs = append(resourceIDs, rid)
@@ -701,15 +725,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -729,8 +756,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -743,7 +770,12 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			resourceID, _ = instBody["resource_id"].(string)
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty())
+			resourceID, _ = resourceIDs[0].(string)
 			Expect(resourceID).NotTo(BeEmpty())
 
 			By("verifying the real instance still reaches RUNNING")
@@ -876,15 +908,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -904,8 +939,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -918,7 +953,12 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			resourceID, _ = instBody["resource_id"].(string)
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty())
+			resourceID, _ = resourceIDs[0].(string)
 			Expect(resourceID).NotTo(BeEmpty())
 
 			By("verifying the real instance still reaches RUNNING")
@@ -984,15 +1024,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -1011,8 +1054,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -1024,7 +1067,12 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			resourceID, _ = instBody["resource_id"].(string)
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty())
+			resourceID, _ = resourceIDs[0].(string)
 			Expect(resourceID).NotTo(BeEmpty())
 
 			By("waiting for RUNNING before stability check")
@@ -1137,15 +1185,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -1164,8 +1215,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -1177,7 +1228,12 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			resourceID, _ = instBody["resource_id"].(string)
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty())
+			resourceID, _ = resourceIDs[0].(string)
 			Expect(resourceID).NotTo(BeEmpty())
 
 			By("waiting for RUNNING before deletion")
@@ -1302,15 +1358,18 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"api_version": "v1alpha1",
 				"display_name": %q,
 				"spec": {
-					"service_type": "container",
-					"fields": [
-						{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
-						{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
-						{"path": "resources.cpu.min", "editable": false, "default": 1},
-						{"path": "resources.cpu.max", "editable": false, "default": 1},
-						{"path": "resources.memory.min", "editable": false, "default": "128MB"},
-						{"path": "resources.memory.max", "editable": false, "default": "256MB"}
-					]
+					"resources": [{
+						"name": "main",
+						"service_type": "container",
+						"fields": [
+							{"path": "metadata.name", "display_name": "Container Name", "editable": true, "default": %q},
+							{"path": "image.reference", "display_name": "Image", "editable": true, "default": "docker.io/library/nginx:alpine"},
+							{"path": "resources.cpu.min", "editable": false, "default": 1},
+							{"path": "resources.cpu.max", "editable": false, "default": 1},
+							{"path": "resources.memory.min", "editable": false, "default": "128MB"},
+							{"path": "resources.memory.max", "editable": false, "default": "256MB"}
+						]
+					}]
 				}
 			}`, catName, catName)
 
@@ -1329,8 +1388,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"spec": {
 					"catalog_item_id": %q,
 					"user_values": [
-						{"path": "metadata.name", "value": %q},
-						{"path": "image.reference", "value": "docker.io/library/nginx:alpine"}
+						{"path": "metadata.name", "value": %q, "resource": "main"},
+						{"path": "image.reference", "value": "docker.io/library/nginx:alpine", "resource": "main"}
 					]
 				}
 			}`, instName, catalogItemID, instName)
@@ -1342,7 +1401,12 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			resourceID, _ = instBody["resource_id"].(string)
+			instSpec, ok := instBody["spec"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "spec should be a map")
+			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
+			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
+			Expect(resourceIDs).NotTo(BeEmpty())
+			resourceID, _ = resourceIDs[0].(string)
 			Expect(resourceID).NotTo(BeEmpty())
 
 			By("waiting for RUNNING before edge case tests")

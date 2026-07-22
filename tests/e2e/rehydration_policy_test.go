@@ -72,7 +72,7 @@ var _ = Describe("Rehydration Policy", Label("rehydration", "policy"), func() {
 			resp, body := rehydrateInstance(inst.UID)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			newResourceID := stringField(body, "resource_id")
+			newResourceID := firstResourceID(body)
 			Expect(newResourceID).NotTo(Equal(inst.ResourceID))
 
 			if kubectlAvailable {
@@ -165,7 +165,7 @@ var _ = Describe("Rehydration Policy", Label("rehydration", "policy"), func() {
 			resp, body := rehydrateInstance(inst.UID)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			newResourceID := stringField(body, "resource_id")
+			newResourceID := firstResourceID(body)
 			Expect(newResourceID).NotTo(Equal(inst.ResourceID))
 
 			if kubectlAvailable && providerB.Namespace != "" {

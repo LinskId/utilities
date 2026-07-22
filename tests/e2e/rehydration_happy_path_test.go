@@ -14,7 +14,7 @@ import (
 var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), Ordered, func() {
 	var (
 		instanceUID    string
-		firstResourceID string
+		origResourceID string
 		policyID       string
 	)
 
@@ -44,7 +44,7 @@ var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), O
 		Expect(inst.UID).NotTo(BeEmpty())
 		Expect(inst.ResourceID).NotTo(BeEmpty())
 		instanceUID = inst.UID
-		firstResourceID = inst.ResourceID
+		origResourceID = inst.ResourceID
 
 		GinkgoWriter.Printf("Created instance UID=%s ResourceID=%s\n", inst.UID, inst.ResourceID)
 
@@ -57,12 +57,12 @@ var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), O
 		resp, body := rehydrateInstance(instanceUID)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		newResourceID := stringField(body, "resource_id")
+		newResourceID := firstResourceID(body)
 		Expect(newResourceID).NotTo(BeEmpty())
-		Expect(newResourceID).NotTo(Equal(firstResourceID))
+		Expect(newResourceID).NotTo(Equal(origResourceID))
 
 		GinkgoWriter.Printf("Rehydrated: old ResourceID=%s new ResourceID=%s\n",
-			firstResourceID, newResourceID)
+			origResourceID, newResourceID)
 	})
 
 	It("preserves UID and assigns new resource_id", func() {
@@ -70,10 +70,10 @@ var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), O
 
 		inst := getInstance(instanceUID)
 		Expect(inst.UID).To(Equal(instanceUID))
-		Expect(inst.ResourceID).NotTo(Equal(firstResourceID))
+		Expect(inst.ResourceID).NotTo(Equal(origResourceID))
 
 		GinkgoWriter.Printf("Confirmed: UID=%s stable, ResourceID changed from %s to %s\n",
-			inst.UID, firstResourceID, inst.ResourceID)
+			inst.UID, origResourceID, inst.ResourceID)
 	})
 
 	It("new K8s resources exist in provider's namespace", Label("cluster"), func() {
@@ -99,7 +99,7 @@ var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), O
 
 	It("old K8s resources are cleaned up", Label("cluster"), func() {
 		requireKubectl()
-		Expect(firstResourceID).NotTo(BeEmpty(), "create test must pass first")
+		Expect(origResourceID).NotTo(BeEmpty(), "create test must pass first")
 
 		provider := threeTierProviders[0]
 		ns := provider.Namespace
@@ -107,7 +107,7 @@ var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), O
 			ns = "default"
 		}
 
-		waitForDeploymentsGone(ns, firstResourceID, cleanupTimeout)
+		waitForDeploymentsGone(ns, origResourceID, cleanupTimeout)
 	})
 
 	It("application is functional after rehydrate", Label("cluster"), func() {
@@ -149,7 +149,7 @@ var _ = Describe("Rehydration Happy Path", Label("rehydration", "happy-path"), O
 		resp, body := rehydrateInstance(instanceUID)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		newResourceID := stringField(body, "resource_id")
+		newResourceID := firstResourceID(body)
 		Expect(newResourceID).NotTo(BeEmpty())
 		Expect(newResourceID).NotTo(Equal(preResourceID))
 
