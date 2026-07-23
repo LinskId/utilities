@@ -706,16 +706,16 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			Expect(err).NotTo(HaveOccurred())
 			conn.Flush()
 
-			By("verifying the SPRM health endpoint is still responsive")
+			By("verifying the control-plane health endpoint is still responsive")
 			Eventually(func() int {
-				r, e := doRequest(http.MethodGet, "/health/providers", "")
+				r, e := doRequest(http.MethodGet, "/health", "")
 				if e != nil {
 					return 0
 				}
 				defer r.Body.Close()
 				return r.StatusCode
 			}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal(http.StatusOK),
-				"SPRM should remain healthy after processing event for non-existent instance")
+				"control plane should remain healthy after processing event for non-existent instance")
 		})
 
 		It("still processes real status events after the fake one", func() {
@@ -889,16 +889,16 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			}
 			conn.Flush()
 
-			By("verifying the SPRM health endpoint is still responsive after all malformed messages")
+			By("verifying the control-plane health endpoint is still responsive after all malformed messages")
 			Eventually(func() int {
-				r, e := doRequest(http.MethodGet, "/health/providers", "")
+				r, e := doRequest(http.MethodGet, "/health", "")
 				if e != nil {
 					return 0
 				}
 				defer r.Body.Close()
 				return r.StatusCode
 			}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal(http.StatusOK),
-				"SPRM should remain healthy after processing malformed NATS messages")
+				"control plane should remain healthy after processing malformed NATS messages")
 		})
 
 		It("still processes real status events after malformed ones", func() {

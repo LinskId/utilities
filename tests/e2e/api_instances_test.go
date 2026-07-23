@@ -15,7 +15,7 @@ import (
 var _ = Describe("Service Type Instances API", func() {
 	Context("service_type filter", Ordered, func() {
 		var containerProviderName string
-		var catalogItemID, instanceID, resourceID string
+		var policyID, catalogItemID, instanceID, resourceID string
 
 		BeforeAll(func() {
 			requireContainerSP()
@@ -35,6 +35,26 @@ var _ = Describe("Service Type Instances API", func() {
 			containerProviderName, _ = p["name"].(string)
 			Expect(containerProviderName).NotTo(BeEmpty())
 			GinkgoWriter.Printf("Using container provider: %s\n", containerProviderName)
+
+			By("creating a routing policy to direct traffic to the container provider")
+			polName := uniqueName("e2e-filter-pol")
+			pkgName := fmt.Sprintf("e2e_filter_%d", time.Now().UnixNano()%1000000)
+			polPayload := fmt.Sprintf(`{
+				"display_name": %q,
+				"policy_type": "GLOBAL",
+				"priority": 100,
+				"description": "E2E instance filter test: route to container provider",
+				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+			}`, polName, pkgName, containerProviderName)
+
+			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+
+			var polBody map[string]interface{}
+			decodeJSON(resp, &polBody)
+			policyID, _ = polBody["id"].(string)
+			Expect(policyID).NotTo(BeEmpty())
 
 			By("creating a catalog item for the container service type")
 			catName := uniqueName("e2e-filter")
@@ -67,7 +87,7 @@ var _ = Describe("Service Type Instances API", func() {
 			Expect(catalogItemID).NotTo(BeEmpty())
 			GinkgoWriter.Printf("Created catalog item: %s\n", catalogItemID)
 
-			By("creating a catalog item instance (relies on existing routing policy)")
+			By("creating a catalog item instance")
 			instName := uniqueName("e2e-filter-inst")
 			instPayload := fmt.Sprintf(`{
 				"api_version": "v1alpha1",
@@ -141,6 +161,12 @@ var _ = Describe("Service Type Instances API", func() {
 			}
 			if catalogItemID != "" {
 				resp, err := doRequest(http.MethodDelete, "/catalog-items/"+catalogItemID, "")
+				if err == nil && resp != nil {
+					resp.Body.Close()
+				}
+			}
+			if policyID != "" {
+				resp, err := doRequest(http.MethodDelete, "/policies/"+policyID, "")
 				if err == nil && resp != nil {
 					resp.Body.Close()
 				}
