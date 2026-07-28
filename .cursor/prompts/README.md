@@ -21,6 +21,7 @@ In Cursor, type `@` followed by the prompt name to include it in your conversati
 | `check-versions.md` | Resolve running containers to git commit SHAs |
 | `troubleshoot-deploy.md` | Diagnose common deployment failures |
 | `maintain-pr-summary.md` | Maintain a running PR summary as work is developed |
+| `write-test-plan.md` | Write a comprehensive E2E test plan for a Jira ticket |
 
 ## Example Usage
 
@@ -29,6 +30,7 @@ In Cursor, type `@` followed by the prompt name to include it in your conversati
 3. **Versions**: Type `@check-versions` then ask "What versions are running?"
 4. **Troubleshoot**: Type `@troubleshoot-deploy` then paste your error output
 5. **PR Summary**: Type `@maintain-pr-summary` then ask "Update the PR summary with recent changes"
+6. **Test Plan**: Type `@write-test-plan` then ask "Write a test plan for FLPATH-XXXX"
 
 ## For Claude Code / claude.ai
 
