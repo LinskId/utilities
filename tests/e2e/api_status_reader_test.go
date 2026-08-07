@@ -117,6 +117,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -125,13 +126,10 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
 			Expect(instanceID).NotTo(BeEmpty())
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty(), "resource_ids[0] should be set synchronously by placement")
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 			GinkgoWriter.Printf("Status reader test: created instance %s (resource_id=%s)\n", instanceID, resourceID)
 		})
 
@@ -194,7 +192,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(resp, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(120 * time.Second).WithPolling(3 * time.Second).Should(Equal("RUNNING"),
+			}).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal("RUNNING"),
 				"SPRM should reflect RUNNING after the NATS consumer processes the SP's status event")
 		})
 
@@ -335,6 +333,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName, badImage)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -343,13 +342,10 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
 			Expect(instanceID).NotTo(BeEmpty())
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty())
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 			GinkgoWriter.Printf("Bad image test: created instance %s (resource_id=%s)\n", instanceID, resourceID)
 		})
 
@@ -396,7 +392,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(resp, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Equal("PENDING"),
+			}).WithTimeout(60*time.Second).WithPolling(3*time.Second).Should(Equal("PENDING"),
 				"SPRM API should show PENDING when the SP reports ImagePullBackOff → PENDING")
 		})
 
@@ -414,7 +410,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(resp, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(15 * time.Second).WithPolling(3 * time.Second).ShouldNot(Equal("RUNNING"),
+			}).WithTimeout(15*time.Second).WithPolling(3*time.Second).ShouldNot(Equal("RUNNING"),
 				"instance with invalid image should never reach RUNNING")
 		})
 	})
@@ -506,6 +502,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 					}
 				}`, instName, catalogItemID, instName)
 
+				beforeSTIs := listServiceTypeInstanceIDs()
 				resp, err := doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -514,13 +511,10 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(resp, &instBody)
 				uid, _ := instBody["uid"].(string)
 				Expect(uid).NotTo(BeEmpty())
-				iSpec, ok := instBody["spec"].(map[string]interface{})
-				Expect(ok).To(BeTrue(), "spec should be a map")
-				rIDs, ok := iSpec["resource_ids"].([]interface{})
-				Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-				Expect(rIDs).NotTo(BeEmpty())
-				rid, _ := rIDs[0].(string)
-				Expect(rid).NotTo(BeEmpty())
+				_, specOK := instBody["spec"].(map[string]interface{})
+				Expect(specOK).To(BeTrue(), "spec should be a map")
+				rid := resolveResourceIDAfterCreate(instBody, beforeSTIs)
+				Expect(rid).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 				instanceIDs = append(instanceIDs, uid)
 				resourceIDs = append(resourceIDs, rid)
 				GinkgoWriter.Printf("Created instance %d: %s (resource_id=%s)\n", i, uid, rid)
@@ -573,7 +567,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 					decodeJSON(resp, &body)
 					s, _ := body["status"].(string)
 					return s
-				}).WithTimeout(120 * time.Second).WithPolling(3 * time.Second).Should(Equal("RUNNING"),
+				}).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal("RUNNING"),
 					"instance %d (resource_id=%s) should reach RUNNING via independent status update", i, rid)
 			}
 		})
@@ -714,7 +708,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 				defer r.Body.Close()
 				return r.StatusCode
-			}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal(http.StatusOK),
+			}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(Equal(http.StatusOK),
 				"control plane should remain healthy after processing event for non-existent instance")
 		})
 
@@ -762,21 +756,19 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty())
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			Expect(instanceID).NotTo(BeEmpty())
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 
 			By("verifying the real instance still reaches RUNNING")
 			Eventually(func() string {
@@ -792,7 +784,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(r, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(120 * time.Second).WithPolling(3 * time.Second).Should(Equal("RUNNING"),
+			}).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal("RUNNING"),
 				"consumer should still process real events after handling a fake instance ID")
 		})
 	})
@@ -897,7 +889,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 				defer r.Body.Close()
 				return r.StatusCode
-			}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal(http.StatusOK),
+			}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(Equal(http.StatusOK),
 				"control plane should remain healthy after processing malformed NATS messages")
 		})
 
@@ -945,21 +937,19 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty())
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			Expect(instanceID).NotTo(BeEmpty())
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 
 			By("verifying the real instance still reaches RUNNING")
 			Eventually(func() string {
@@ -975,7 +965,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(r, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(120 * time.Second).WithPolling(3 * time.Second).Should(Equal("RUNNING"),
+			}).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal("RUNNING"),
 				"consumer should recover from malformed messages and process real events")
 		})
 	})
@@ -1060,6 +1050,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -1067,13 +1058,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty())
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			Expect(instanceID).NotTo(BeEmpty())
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 
 			By("waiting for RUNNING before stability check")
 			Eventually(func() string {
@@ -1135,7 +1124,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(resp, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(15 * time.Second).WithPolling(2 * time.Second).Should(Equal("RUNNING"),
+			}).WithTimeout(15*time.Second).WithPolling(2*time.Second).Should(Equal("RUNNING"),
 				"status should remain RUNNING without any disruption")
 		})
 	})
@@ -1221,6 +1210,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -1228,13 +1218,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty())
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			Expect(instanceID).NotTo(BeEmpty())
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 
 			By("waiting for RUNNING before deletion")
 			Eventually(func() string {
@@ -1289,7 +1277,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 				defer r.Body.Close()
 				return r.StatusCode
-			}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Equal(http.StatusNotFound),
+			}).WithTimeout(60*time.Second).WithPolling(3*time.Second).Should(Equal(http.StatusNotFound),
 				"service-type-instance should return 404 after deletion — no ghost status records")
 			instanceDeleted = true
 		})
@@ -1394,6 +1382,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -1401,13 +1390,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 			var instBody map[string]interface{}
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty())
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			Expect(instanceID).NotTo(BeEmpty())
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 
 			By("waiting for RUNNING before edge case tests")
 			Eventually(func() string {
@@ -1497,7 +1484,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(r, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal(customStatus),
+			}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(Equal(customStatus),
 				"consumer should store arbitrary status values without validation")
 		})
 
@@ -1548,7 +1535,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(r, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(10 * time.Second).WithPolling(1 * time.Second).Should(Equal("PENDING"),
+			}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(Equal("PENDING"),
 				"consumer should apply last-write-wins — no forward-only constraint on status")
 		})
 
@@ -1629,7 +1616,7 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				decodeJSON(r, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(5 * time.Second).WithPolling(1 * time.Second).Should(Equal(knownStatus),
+			}).WithTimeout(5*time.Second).WithPolling(1*time.Second).Should(Equal(knownStatus),
 				"empty status string should be a no-op due to GORM zero-value skip behavior")
 		})
 	})

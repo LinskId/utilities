@@ -193,6 +193,7 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 				}
 			}`, name, catalogItemID, name)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err := doRequest(http.MethodPost, "/catalog-item-instances", payload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -207,12 +208,10 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 
 			spec, ok := body["spec"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := spec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
-			rid, ok := resourceIDs[0].(string)
-			Expect(ok).To(BeTrue(), "resource_ids[0] should be a string")
-			resourceID = rid
+			Expect(spec).To(HaveKey("catalog_item_id"))
+			Expect(body).To(HaveKey("run_id"), "create must return run_id after control-plane#39")
+			resourceID = resolveResourceIDAfterCreate(body, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 		})
 
 		It("reaches RUNNING status", func() {
@@ -227,7 +226,7 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 				decodeJSON(resp, &body)
 				s, _ := body["status"].(string)
 				return s
-			}).WithTimeout(120 * time.Second).WithPolling(3 * time.Second).Should(Equal("RUNNING"),
+			}).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal("RUNNING"),
 				"service type instance should reach RUNNING status")
 		})
 

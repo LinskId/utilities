@@ -101,6 +101,7 @@ var _ = Describe("Service Type Instances API", func() {
 				}
 			}`, instName, catalogItemID, instName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err = doRequest(http.MethodPost, "/catalog-item-instances", instPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -109,14 +110,14 @@ var _ = Describe("Service Type Instances API", func() {
 			decodeJSON(resp, &instBody)
 			instanceID, _ = instBody["uid"].(string)
 			Expect(instanceID).NotTo(BeEmpty())
-			instSpec, ok := instBody["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "spec should be a map")
-			resourceIDs, ok := instSpec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-			Expect(resourceIDs).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
-			resourceID, _ = resourceIDs[0].(string)
-			Expect(resourceID).NotTo(BeEmpty(), "resource_ids[0] should be set synchronously by placement")
-			GinkgoWriter.Printf("Created catalog-item-instance: %s (resource_id=%s)\n", instanceID, resourceID)
+			Expect(instBody).To(HaveKey("spec"), "spec should be present")
+			_, specOK := instBody["spec"].(map[string]interface{})
+			Expect(specOK).To(BeTrue(), "spec should be a map")
+			// control-plane#39: resource IDs come from CreateRun / STI discovery, not spec.resource_ids
+			resourceID = resolveResourceIDAfterCreate(instBody, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
+			GinkgoWriter.Printf("Created catalog-item-instance: %s (resource_id=%s run_id=%v)\n",
+				instanceID, resourceID, instBody["run_id"])
 
 			By("waiting for the service-type-instance to be queryable")
 			Eventually(func() int {

@@ -28,6 +28,7 @@ const (
 type CatalogItemInstance struct {
 	UID         string
 	ResourceID  string
+	RunID       string
 	DisplayName string
 	APIVersion  string
 	CreateTime  string
@@ -246,16 +247,16 @@ func resolveProviderRegion(providerName string) string {
 }
 
 func firstResourceID(body map[string]interface{}) string {
-	spec, ok := body["spec"].(map[string]interface{})
-	if !ok {
-		return ""
+	if v, ok := body["__e2e_resource_id"].(string); ok && v != "" {
+		return v
 	}
-	rids, ok := spec["resource_ids"].([]interface{})
-	if !ok || len(rids) == 0 {
-		return ""
+	if ids := legacyResourceIDsFromSpec(body); len(ids) > 0 {
+		return ids[0]
 	}
-	s, _ := rids[0].(string)
-	return s
+	if runID := stringField(body, "run_id"); runID != "" {
+		return runResourceIDCache[runID]
+	}
+	return ""
 }
 
 func requireThreeTierSP() {
@@ -310,6 +311,7 @@ func createTestInstance(displayName string, userValues []map[string]string) Cata
 	data, err := json.Marshal(payload)
 	Expect(err).NotTo(HaveOccurred())
 
+	before := listServiceTypeInstanceIDs()
 	resp, err := doRequest(http.MethodPost, "/catalog-item-instances", string(data))
 	Expect(err).NotTo(HaveOccurred())
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
@@ -317,7 +319,13 @@ func createTestInstance(displayName string, userValues []map[string]string) Cata
 		Fail(fmt.Sprintf("create instance failed with status %d: %s", resp.StatusCode, string(body)))
 	}
 
-	return parseCatalogItemInstance(resp)
+	inst := parseCatalogItemInstance(resp)
+	if inst.ResourceID == "" {
+		inst.ResourceID = resolveResourceIDAfterCreate(inst.Raw, before)
+	}
+	Expect(inst.ResourceID).NotTo(BeEmpty(),
+		"could not resolve placement resource ID after create")
+	return inst
 }
 
 func getInstance(uid string) CatalogItemInstance {
@@ -333,11 +341,16 @@ func getInstanceRaw(uid string) (*http.Response, error) {
 
 func rehydrateInstance(uid string) (*http.Response, map[string]interface{}) {
 	ensureProvidersReady()
+	before := listServiceTypeInstanceIDs()
 	resp, err := doRequest(http.MethodPost, "/catalog-item-instances/"+uid+":rehydrate", "")
 	Expect(err).NotTo(HaveOccurred())
 
 	var body map[string]interface{}
 	decodeJSON(resp, &body)
+	if resp.StatusCode == http.StatusOK {
+		rid := resolveResourceIDAfterCreate(body, before)
+		body["__e2e_resource_id"] = rid
+	}
 	return resp, body
 }
 
@@ -363,6 +376,7 @@ func parseCatalogItemInstance(resp *http.Response) CatalogItemInstance {
 
 	inst := CatalogItemInstance{
 		UID:         stringField(raw, "uid"),
+		RunID:       stringField(raw, "run_id"),
 		DisplayName: stringField(raw, "display_name"),
 		APIVersion:  stringField(raw, "api_version"),
 		CreateTime:  stringField(raw, "create_time"),
@@ -371,9 +385,12 @@ func parseCatalogItemInstance(resp *http.Response) CatalogItemInstance {
 	}
 	if spec, ok := raw["spec"].(map[string]interface{}); ok {
 		inst.Spec = spec
-		if rids, ok := spec["resource_ids"].([]interface{}); ok && len(rids) > 0 {
-			inst.ResourceID, _ = rids[0].(string)
+		if ids := legacyResourceIDsFromSpec(raw); len(ids) > 0 {
+			inst.ResourceID = ids[0]
 		}
+	}
+	if inst.ResourceID == "" && inst.RunID != "" {
+		inst.ResourceID = runResourceIDCache[inst.RunID]
 	}
 	return inst
 }
@@ -510,7 +527,6 @@ func startProvider(provider ThreeTierProvider) {
 		"podman start %s failed: %s", provider.ContainerName, string(out))
 	GinkgoWriter.Printf("Started provider %s (container: %s)\n", provider.Name, provider.ContainerName)
 }
-
 
 func restartSPRM() {
 	container := findComposeContainer("service-provider-resource-manager")

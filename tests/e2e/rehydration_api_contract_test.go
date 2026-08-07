@@ -34,15 +34,17 @@ var _ = Describe("Rehydration API Contract", Label("rehydration", "contract"), f
 		Expect(body).To(HaveKey("api_version"))
 		Expect(body).To(HaveKey("create_time"))
 		Expect(body).To(HaveKey("update_time"))
+		Expect(body).To(HaveKey("run_id"), "rehydrate must return run_id after control-plane#39")
 
 		Expect(stringField(body, "uid")).NotTo(BeEmpty())
 		Expect(stringField(body, "api_version")).To(Equal("v1alpha1"))
+		Expect(stringField(body, "run_id")).NotTo(BeEmpty())
 
 		spec, ok := body["spec"].(map[string]interface{})
 		Expect(ok).To(BeTrue(), "spec should be a map")
-		rids, ok := spec["resource_ids"].([]interface{})
-		Expect(ok).To(BeTrue(), "spec.resource_ids should be an array")
-		Expect(rids).NotTo(BeEmpty(), "spec.resource_ids should not be empty")
+		Expect(spec).To(HaveKey("catalog_item_id"))
+		Expect(firstResourceID(body)).NotTo(BeEmpty(),
+			"rehydrate must yield a discoverable placement resource ID")
 	})
 
 	It("404 response conforms to RFC 7807", func() {
