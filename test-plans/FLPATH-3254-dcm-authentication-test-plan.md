@@ -4,10 +4,11 @@
 |---|---|
 | **Epic** | [FLPATH-3254](https://redhat.atlassian.net/browse/FLPATH-3254) |
 | **Author** | Chad Crum |
-| **Version** | 1.7 |
-| **Last Updated** | 2026-07-22 |
+| **Contributors** | Vlad Kolodny (v1.8 E2E / full-stack gap TCs; review trim) |
+| **Version** | 1.8.1 |
+| **Last Updated** | 2026-08-07 |
 | **Target Release** | DCM 1.0 |
-| **Status** | Ready |
+| **Status** | In progress — plan complete; P1 E2E execution blocked on FLPATH-4622 / FLPATH-4645 |
 
 ## Description
 
@@ -15,20 +16,35 @@ DCM control-plane authentication adds Keycloak-backed identity to the DCM API. T
 
 This plan validates all authentication capabilities across three deployment configurations: auth disabled (default), JWT-enabled, and proxy-only mode. It also includes Helm chart smoke tests confirming baseline deployment with auth disabled (auth-enabled Helm testing deferred to [FLPATH-4476](https://redhat.atlassian.net/browse/FLPATH-4476)).
 
+**Scope split:**
+
+| Scope | TCs | Where exercised |
+|-------|-----|-----------------|
+| Control-plane auth middleware | TC-01 – TC-31 | Compose + subsystem suite (`control-plane#32`) |
+| Helm smoke (auth disabled) | TC-32 – TC-35 | OpenShift/Kubernetes |
+| Full-stack / client E2E gaps | TC-36 – TC-42 | Planned for utilities E2E + Jenkins (`ENABLE_DCM_AUTH`) |
+
+TC-01–TC-35 remain the original control-plane / Helm plan. TC-36+ cover full-stack gaps (UI/RHDH backend, service providers, CI auth toggle) that the subsystem suite cannot cover. JWT negative cases beyond TC-14/TC-15 (wrong audience, `alg:none`) ❗ should cover in subsystem — see checklist.
+
 ### References
 
 - [FLPATH-3254](https://redhat.atlassian.net/browse/FLPATH-3254) - Implement IDM/IAM and Authorization Layer (epic)
 - [FLPATH-4432](https://redhat.atlassian.net/browse/FLPATH-4432) - Implement IDM/IAM user authentication layer (story)
 - [control-plane#24](https://github.com/dcm-project/control-plane/pull/24) - feat(auth): add IDM/IAM authentication with in-app JWT validation
-- [FLPATH-4478](https://redhat.atlassian.net/browse/FLPATH-4478) - Add DCM authentication E2E tests in utilities repo
+- [control-plane#32](https://github.com/dcm-project/control-plane/pull/32) - auth subsystem black-box test suite
+- [FLPATH-4478](https://redhat.atlassian.net/browse/FLPATH-4478) - Add DCM authentication E2E tests in utilities repo (Closed; E2E suite still outstanding)
+- [FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645) - DCM UI `tokenUtil` hardcodes Red Hat SSO path/scope (blocks local Keycloak)
+- [FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622) - Implement Auth mechanism to the agent (SP→CP auth; blocks SP registration under Config B)
+- [flight-path-auto-tests!955](https://gitlab.cee.redhat.com/ocp-edge-qe/flight-path-auto-tests/-/merge_requests/955) - `ENABLE_DCM_AUTH` pipeline parameter
 - [enhancements#52](https://github.com/dcm-project/enhancements/pull/52) - Authentication enhancement design
 
 ### Acceptance Criteria
 
-- All P1 (critical) test cases must PASS
+- All P1 (critical) test cases must PASS, **or** have a documented blocker (Jira) explaining why they cannot run yet
 - All P2 (important) test cases must PASS or have documented workarounds
 - P3 (nice-to-have) failures may be deferred with a tracking Jira issue
 
+Known P1 execution blockers today: [FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622) (SP/agent auth — blocks TC-36 Step 2, TC-37, TC-38), [FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645) (UI tokenUtil — blocks TC-39, TC-40).
 ---
 
 ## Environment and Global Setup
@@ -41,6 +57,8 @@ This plan validates all authentication capabilities across three deployment conf
 - `psql` (postgresql-client) on the host, OR use `podman exec <postgres-container> psql` for DB queries
 - Ports 8080, 8180, 5432, 4222, 7007 free
 - Network access to `quay.io` for pulling container images
+
+> **CI note:** On Ecosystem Jenkins `flightpath-dcm-deploy`, the control-plane host port is remapped **8080 → 9080** to avoid conflicts (FLPATH-4421). Use `http://localhost:9080` for API calls in CI; local `make compose-up` still uses `8080`. Keycloak remains on host port `8180`.
 
 ### Deployment Configurations
 
@@ -191,7 +209,7 @@ None - Config B needed for subsequent test cases.
 
 **Priority:** P1 (critical)
 **Type:** Functional
-**Method:** Manual
+**Method:** Automated (implicit) | catalog / policy / sp subsystem suites (`AUTH_DISABLED=true`)
 **Requires:** Global setup, Config A
 
 #### Description
@@ -493,7 +511,7 @@ None.
 
 ---
 
-### TC-08: Full CRUD lifecycle with JWT auth
+### TC-08: Provider CRUD via control-plane API with JWT auth
 
 **Priority:** P1 (critical)
 **Type:** Functional
@@ -502,7 +520,7 @@ None.
 
 #### Description
 
-Validates the complete provider CRUD lifecycle under JWT authentication: create, list, get by ID, delete, and verify deletion.
+Validates authentication through the **control-plane API** only (JWT on provider create / list / get / delete via `curl`). No service providers or full-stack instance path. Full-stack instance lifecycle under auth is TC-36.
 
 #### Prerequisites
 
@@ -833,12 +851,14 @@ Switch back to Config B if continuing with other test cases.
 
 **Priority:** P1 (critical)
 **Type:** Negative
-**Method:** Manual
+**Method:** Manual (candidate for utilities E2E)
 **Requires:** TC-04, Config B
 
 #### Description
 
 An expired JWT token is rejected with 401. Keycloak access tokens have a 300s (5 minute) lifespan by default.
+
+> **Faster alternative:** Temporarily set the realm access-token lifespan to 30s in Keycloak Admin (`Realm settings → Tokens → Access Token Lifespan`), obtain a token, wait 35s, then restore 300s. Prefer this over a 310s sleep in automation.
 
 #### Prerequisites
 
@@ -1852,6 +1872,373 @@ None - this is the Helm cleanup test case.
 
 ---
 
+## Full-Stack / Client E2E Gap Tests (TC-36 – TC-42)
+
+> **Why this section exists:** TC-01–TC-35 validate the control-plane auth middleware (and Helm with auth disabled). They do **not** cover RHDH/DCM-UI backend machine-to-machine auth, service providers registering under auth, instance provisioning under auth, or the Jenkins auth toggle.
+>
+> **Automation target:** utilities E2E suite + `flightpath-dcm-deploy` with `ENABLE_DCM_AUTH=true`. Subsystem suite cannot cover UI/SPs/CI.
+>
+> **Known blocker:** [FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645) — DCM UI `tokenUtil` hardcodes Red Hat SSO token path/scope; local Keycloak requires a patched UI/plugin image until fixed.
+
+### Helper: Full stack with auth enabled (Config B + providers)
+
+Use the utilities deploy path or Ecosystem Jenkins `flightpath-dcm-deploy` with:
+
+```bash
+# Example env for deploy-dcm.sh / compose
+export AUTH_DISABLED=false
+export AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm
+export AUTH_JWT_AUDIENCE=dcm-api
+# Local default (same as TC-01–TC-35). Jenkins remaps control-plane to :9080 — see Environment CI note.
+export DCM_API_URL=http://localhost:8080
+```
+
+Confirm unauthenticated API fails before running client TCs:
+
+```bash
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' "${DCM_API_URL}/api/v1alpha1/providers"
+# Expected: 401
+# CI: DCM_API_URL=http://localhost:9080
+```
+
+> **Port convention:** All curl examples in this section use `http://localhost:8080` (local compose). On Ecosystem Jenkins, substitute `http://localhost:9080` (or set `DCM_API_URL` accordingly).
+
+---
+
+### TC-36: Instance creation under JWT auth (full stack)
+
+**Priority:** P1 (critical) — happy path **blocked** until SP auth ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622))
+**Type:** Functional
+**Method:** Manual | Blocked (Step 2) | Step 3 runnable
+**Requires:** Config B; Step 2 needs a registered healthy SP (blocked today); Steps 1 and 3 do not
+
+> **❗ Blocked (Step 2):** Same SP→CP auth blocker as TC-37/TC-38. Config B + a registered healthy SP still requires `AUTH_DISABLED=true` for SP profiles until agent/SP auth lands ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622); [FLPATH-4196](https://redhat.atlassian.net/browse/FLPATH-4196) is obsolete). **Step 1** (token) and **Step 3** (unauthenticated → 401) are fine without SPs.
+
+#### Description
+
+End-to-end path with auth enabled: obtain JWT → create catalog instance → placement → SP provision. Proves auth does not break catalog/placement/SPRM. Negative unauth check is independent of SPs.
+
+#### Prerequisites
+
+- Config B running
+- Step 2 only: at least one healthy registered SP, catalog item / service type, placement with `selected_provider` (needs SP auth / FLPATH-4622)
+- Steps 1 and 3: Config B only
+
+#### Steps
+
+**Step 1: Obtain token**
+
+```bash
+TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
+  http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
+```
+
+**Step 2: Create instance via API** (blocked until SP auth / FLPATH-4622)
+
+```bash
+curl -s -w '\nHTTP %{http_code}\n' -X POST \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "api_version": "v1alpha1",
+    "display_name": "<INSTANCE_NAME>",
+    "spec": {
+      "catalog_item_id": "<CATALOG_ITEM_UID>",
+      "user_values": []
+    }
+  }' \
+  http://localhost:8080/api/v1alpha1/catalog-item-instances
+```
+
+**Expected:** HTTP 201. Instance `uid` returned; visible on subsequent authenticated `GET /api/v1alpha1/catalog-item-instances/<uid>`.
+
+**Step 3: Unauthenticated create must fail** (runnable without SPs)
+
+```bash
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "api_version": "v1alpha1",
+    "display_name": "<INSTANCE_NAME>",
+    "spec": {
+      "catalog_item_id": "<CATALOG_ITEM_UID>",
+      "user_values": []
+    }
+  }' \
+  http://localhost:8080/api/v1alpha1/catalog-item-instances
+```
+
+**Expected:** HTTP 401.
+
+#### Cleanup
+
+Delete the test instance with a valid Bearer token (`DELETE /api/v1alpha1/catalog-item-instances/<uid>`), when Step 2 was run.
+---
+
+### TC-37: Service provider registration with auth enabled
+
+**Priority:** P1 (critical) — **blocked** until SP auth lands
+**Type:** Functional
+**Method:** Manual | Blocked ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622))
+**Requires:** Config B, SP container(s) started, SP→CP auth path
+
+> **❗ Blocked:** SPs have no authentication path and compose keeps `AUTH_DISABLED=true` for SP profiles until agent/SP auth lands ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622); [FLPATH-4196](https://redhat.atlassian.net/browse/FLPATH-4196) is obsolete). **Config B + current SP compose profiles do not register today**. Do not treat this TC as Ready until SP clients can authenticate.
+
+#### Description
+
+Service providers must successfully register with the control-plane when auth is enabled. Subsystem suite has no SPs.
+
+#### Prerequisites
+
+- Config B running (`AUTH_DISABLED=false`)
+- SP auth available ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622)) so SP registration/health calls include valid credentials
+- At least one SP image started with registration URL pointing at control-plane
+
+#### Steps
+
+**Step 1: Confirm SP container is running**
+
+```bash
+podman ps --format '{{.Names}} {{.Status}}' | grep -E 'k8s-container|kubevirt|acm-cluster|three-tier'
+```
+
+**Expected:** SP container(s) Up.
+
+**Step 2: List providers with admin JWT**
+
+```bash
+TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
+  http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers | jq '.providers[].name'
+```
+
+**Expected:** Expected SP name(s) present (e.g. `k8s-container-provider`).
+
+#### Cleanup
+
+None.
+
+---
+
+### TC-38: Service provider health remains ready with auth enabled
+
+**Priority:** P1 (critical) — **blocked** (same dependency as TC-37)
+**Type:** Functional
+**Method:** Manual | Blocked ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622))
+**Requires:** TC-37
+
+> **❗ Blocked:** Same as TC-37 — needs SP→CP authentication. Not executable with stock SP profiles under Config B today.
+
+#### Description
+
+After registration, SP health reported by the control-plane stays ready/healthy under auth. Catches broken SP→CP credential paths.
+
+#### Prerequisites
+
+- TC-37 passed (requires SP auth)
+
+#### Steps
+
+**Step 1: Poll provider health via authenticated API**
+
+```bash
+TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
+  http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers | jq '.providers[] | {name, health_status}'
+```
+
+**Expected:** Registered SPs report ready/healthy via `health_status` (or documented known-unhealthy exceptions such as ACM SP GVK scheme issues tracked separately).
+
+**Step 2: SP container logs show no repeated 401 to control-plane**
+
+```bash
+podman logs <sp-container> 2>&1 | grep -iE '401|unauthorized|UNAUTHENTICATED' | tail -5
+```
+
+**Expected:** No sustained auth failures against the control-plane registration/health APIs.
+
+#### Cleanup
+
+None.
+
+---
+
+### TC-39: UI / RHDH backend obtains token via dcm-proxy (M2M)
+
+**Priority:** P1 (critical) — **blocked** until UI tokenUtil fix ([FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645))
+**Type:** Functional
+**Method:** Manual | Blocked ([FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645)) (workaround: patched UI image)
+**Requires:** Config B, DCM UI (compose `:7007`) and/or RHDH with DCM plugins
+
+#### Description
+
+The UI frontend uses guest login; the **backend** must obtain a JWT from Keycloak using `dcm-proxy` client credentials (`DCM_SSO_BASE_URL`, `DCM_CLIENT_ID`, `DCM_CLIENT_SECRET`) and call the control-plane successfully.
+
+#### Prerequisites
+
+- Config B running
+- UI or RHDH configured with:
+  - `dcm.apiUrl` / `DCM_API_URL` → control-plane
+  - `dcm.ssoBaseUrl` → `http://<host>:8180/realms/dcm` (realm path, not Red Hat SSO)
+  - `clientId=dcm-proxy`, `clientSecret=<DCM_PROXY_SECRET>`
+- FLPATH-4645 workaround applied if using unfixed UI image (token URL `/protocol/openid-connect/token`, scope `openid`)
+
+#### Steps
+
+**Step 1: Confirm backend can fetch SSO token (logs)**
+
+```bash
+# Compose UI example
+podman logs <dcm-ui-container> 2>&1 | grep -iE 'DCM token|SSO|401|502' | tail -20
+# RHDH example
+oc logs -n rhdh-operator -c backstage-backend deploy/backstage-developer-hub 2>&1 | grep -iE 'DCM token|SSO' | tail -20
+```
+
+**Expected:** Log lines indicating a new access token was cached (e.g. `DCM token: cached new token`). No SSO 404 on `/auth/realms/redhat-external/...`.
+
+**Step 2: Hit DCM backend proxy API**
+
+```bash
+# Auth/M2M smoke only — not cert validation. `-k` is for lab RHDH self-signed/cluster certs.
+curl -sk -o /dev/null -w 'HTTP %{http_code}\n' \
+  https://<RHDH_HOST>/api/dcm/providers
+# or compose UI equivalent backend route
+```
+
+**Expected:** HTTP 200 (or 401 only if Backstage session missing — not 502 from SSO failure).
+
+#### Cleanup
+
+None.
+
+---
+
+### TC-40: UI /dcm page loads data with auth enabled
+
+**Priority:** P2 (important) — **blocked** until TC-39 / [FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645)
+**Type:** Functional
+**Method:** Manual | Blocked (depends on TC-39)
+**Requires:** TC-39
+
+#### Description
+
+User opens the DCM page in RHDH or compose UI and sees providers/catalog data (not empty error from 401/502/503).
+
+#### Prerequisites
+
+- TC-39 passed
+- Browser or curl to UI origin
+
+#### Steps
+
+**Step 1: Open DCM page**
+
+```bash
+# Auth/UI smoke only — not cert validation. `-k` is for lab RHDH self-signed/cluster certs.
+curl -sk -o /dev/null -w 'HTTP %{http_code}\n' https://<RHDH_HOST>/dcm
+# compose: http://localhost:7007/dcm
+```
+
+**Expected:** HTTP 200 for the shell page.
+
+**Step 2: Enter as Guest (UI) and verify providers render**
+
+**Expected:** DCM page shows provider/catalog content loaded via backend. Browser network tab shows successful backend API calls (not repeated 502 SSO failures).
+
+#### Cleanup
+
+None.
+
+---
+
+### TC-41: Jenkins ENABLE_DCM_AUTH toggle smoke
+
+**Priority:** P2 (important)
+**Type:** Functional / CI
+**Method:** Manual (Jenkins)
+**Requires:** `flight-path-auto-tests` with merged `ENABLE_DCM_AUTH` parameter
+
+#### Description
+
+Validates pipeline wiring: with `ENABLE_DCM_AUTH=true`, control-plane enforces auth; with `false` (default), API works without tokens.
+
+#### Prerequisites
+
+- Access to Ecosystem Jenkins `flightpath-dcm-deploy` (or private folder copy)
+- Host with free ports / existing OCP as required by job
+
+#### Steps
+
+**Step 1: Run deploy with `ENABLE_DCM_AUTH=false` (default)**
+
+**Expected:** Unauthenticated `GET /api/v1alpha1/providers` → 200.
+
+**Step 2: Run deploy with `ENABLE_DCM_AUTH=true`**
+
+Confirm the job sets control-plane auth env (`AUTH_DISABLED=false`, `AUTH_ISSUER_URL`, `AUTH_JWT_AUDIENCE=dcm-api`). Smoke this TC with **curl against the control-plane** (unauth → 401; Bearer → 200).
+
+> **❗ Pipeline gap:** Ecosystem Jenkins `dcm_deploy.groovy` (upstream) still passes `--auth-enabled --keycloak-url …` into `tests/run-e2e.sh` when `ENABLE_DCM_AUTH=true`. Those flags are **not** defined on `run-e2e.sh` / `deploy-dcm.sh` today — auth is env-driven only. Enabling the E2E stage with that dead flag will fail; track a pipeline fix separately. This TC is deploy-env + curl smoke, not “E2E suite with `--auth-enabled`”.
+
+**Expected:** Unauthenticated providers → 401; authenticated Bearer → 200.
+
+#### Cleanup
+
+Per job teardown parameters (`SKIP_TEARDOWN`).
+
+---
+
+### TC-42: JWKS rotation / Keycloak restart resilience
+
+**Priority:** P2 (important)
+**Type:** Edge Case
+**Method:** Manual | Planned E2E
+**Requires:** Config B
+
+#### Description
+
+After Keycloak restart (or JWKS key change), new tokens must work. Documents expected behavior when JWKS material changes. Complements risk observation #5 (JWKS required at control-plane startup).
+
+#### Prerequisites
+
+- Config B running
+
+#### Steps
+
+**Step 1: Obtain token and verify API works**
+
+```bash
+TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
+  http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1alpha1/providers
+```
+
+**Expected:** HTTP 200.
+
+**Step 2: Restart Keycloak**
+
+```bash
+podman restart $(podman ps --filter 'label=com.docker.compose.service=keycloak' --format '{{.Names}}')
+# wait until realm OIDC discovery is healthy
+until curl -sf http://localhost:8180/realms/dcm/.well-known/openid-configuration >/dev/null; do sleep 2; done
+```
+
+**Step 3: Obtain a new token and call API**
+
+```bash
+TOKEN2=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
+  http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN2" \
+  http://localhost:8080/api/v1alpha1/providers
+```
+
+**Expected:** HTTP 200 with the new token. Document whether the pre-restart `TOKEN` still works (depends on key stability across restart).
+
+#### Cleanup
+
+None.
+
+---
+
 ## Global Teardown
 
 If any test case left resources behind, run the relevant cleanup:
@@ -1919,6 +2306,16 @@ Global Setup (clone, Config A start)
 Helm Chart (independent track - requires K8s/OCP cluster):
 
     TC-32 (Helm install) --- TC-33 (Health check) --- TC-34 (CRUD round-trip) --- TC-35 (Helm uninstall)
+
+Full-stack / client E2E gaps (Config B + providers / UI / CI):
+
+    Config B --+-- TC-37 (SP register) --- TC-38 (SP health under auth)   [blocked: FLPATH-4622]
+               |                              |
+               +-- TC-36 Step 2 (instance create)  [blocked: needs SP / 4622]
+               +-- TC-36 Step 3 (unauth create → 401)  [runnable without SP]
+               +-- TC-39 (UI backend M2M) --- TC-40 (UI /dcm page)  [blocked: FLPATH-4645]
+               +-- TC-41 (ENABLE_DCM_AUTH Jenkins toggle)  [curl smoke; E2E --auth-enabled broken]
+               +-- TC-42 (JWKS / Keycloak restart)  [runnable]
 ```
 
 ---
@@ -1932,6 +2329,11 @@ Helm Chart (independent track - requires K8s/OCP cluster):
 5. **JWKS availability at startup**: If Keycloak is unreachable, `NewOIDCValidator` fails and the control-plane exits.
 6. **Helm chart auth not templatized**: `AUTH_DISABLED` hardcoded to `true` in chart. Auth-enabled Helm testing deferred to [FLPATH-4476](https://redhat.atlassian.net/browse/FLPATH-4476).
 7. **Username collision during JIT provisioning**: If two Keycloak users share the same `preferred_username` and both JIT-provision, the second user receives HTTP 409 (`username already in use by another account`). This is by design but may surprise operators who expect provisioning to always succeed.
+8. **DCM UI tokenUtil hardcodes Red Hat SSO** ([FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645)): UI/RHDH backend builds token URL as `{ssoBaseUrl}/auth/realms/redhat-external/protocol/openid-connect/token` with scope `api.console`, which breaks local Keycloak (`/realms/dcm`, scope `openid`). Blocks TC-39/TC-40 until fixed or image patched.
+9. **CI control-plane host port is 9080**: Ecosystem Jenkins remaps 8080→9080. E2E and curl examples must use the correct host port or tests falsely fail.
+10. **FLPATH-4478 Closed without E2E suite**: Story closed when the test plan was published; utilities `tests/e2e/` still has no auth suite. TC-36–TC-42 track the remaining automation work in this plan.
+11. **SP auth not delivered ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622))**: Compose keeps `AUTH_DISABLED=true` for SP profiles until agent/SP authentication exists ([FLPATH-4196](https://redhat.atlassian.net/browse/FLPATH-4196) is obsolete). **TC-37/TC-38 are blocked**; Config B + current SP profiles will not register. TC-36 Step 2 shares that blocker; TC-36 Steps 1 and 3 do not.
+12. **Jenkins still passes dead `--auth-enabled` to E2E**: `dcm_deploy.groovy` (upstream) sets `AUTH_ARGS="--auth-enabled --keycloak-url …"` when `ENABLE_DCM_AUTH=true`, but `tests/run-e2e.sh` does not accept those flags. Deploy env wiring is real; the E2E invocation is not. Fix the pipeline separately from TC-41 curl smoke.
 
 ---
 
@@ -1945,6 +2347,7 @@ The following test cases are automated in the auth subsystem test suite
 | TC | Description | Subsystem Test File | Notes |
 |---|---|---|---|
 | TC-01 | Health bypass | `health_test.go` | 3 sub-cases: no auth, invalid bearer, wrong proxy |
+| TC-02 | Auth disabled mode | catalog / policy / sp suites | Implicit: those stacks set `AUTH_DISABLED=true` and exercise APIs without Bearer tokens |
 | TC-03 | Admin seeding | `admin_seed_test.go` | Actor + identity verified via DB |
 | TC-04 | JWT password grant | `oidc_test.go` | ROPC flow + JIT provision + DB verify |
 | TC-05 | Client credentials | `oidc_test.go` | Service account JIT provision + DB verify |
@@ -1956,7 +2359,7 @@ The following test cases are automated in the auth subsystem test suite
 | TC-11b | Username collision | `race_test.go` | 409 Conflict verified |
 | TC-12 | JWT precedence (valid) | `proxy_secret_test.go` | Valid JWT + valid proxy, JWT identity wins |
 | TC-12b | JWT precedence (invalid) | `proxy_secret_test.go` | Invalid JWT + valid proxy = hard 401 |
-| TC-15 | Forged JWT | `oidc_test.go` | Tampered signature |
+| TC-15 | Forged JWT | `oidc_test.go` | Tampered signature; ❗ should cover `alg:none` |
 | TC-16 | Missing auth 401 | `proxy_secret_test.go` | |
 | TC-17 | Wrong proxy secret | `proxy_secret_test.go` | |
 | TC-18 | Missing subject | `proxy_secret_test.go` | |
@@ -1967,25 +2370,37 @@ The following test cases are automated in the auth subsystem test suite
 | TC-26 | 401 RFC 7807 format | `error_format_test.go` | Content-Type + body fields + WWW-Authenticate |
 | TC-27 | 403 RFC 7807 format | `error_format_test.go` | |
 
-**22 of 35 test cases automated** (27 Ginkgo specs total - some TCs map to
-multiple specs).
+**22 of 35 control-plane/Helm test cases** have dedicated auth-suite automation (27 Ginkgo specs). **TC-02** is additionally covered implicitly by catalog/policy/sp suites (`AUTH_DISABLED=true`). Counting TC-02: **23 of 35** have automated coverage.
 
-Remaining manual-only TCs:
+Remaining manual-only / gap TCs (TC-01–TC-35):
 
 | TC | Reason not automated |
 |---|---|
-| TC-02 | Auth disabled mode - covered by catalog/policy/sp subsystem suites |
-| TC-08 | CRUD lifecycle with JWT - CRUD covered by catalog suite, auth by auth suite |
+| TC-08 | Provider CRUD via CP API with JWT - control-plane API only; full-stack instance under auth is TC-36 |
 | TC-13 | Config C (proxy-only) - requires separate compose configuration |
-| TC-14 | Expired JWT - requires 5-minute wait |
+| TC-14 | Expired JWT - requires wait or short-lived token (see TC-14 note); ❗ should cover wrong-audience JWT (subsystem) |
 | TC-22 | Cache bypass verification - requires log inspection |
-| TC-23 | Cache TTL expiry - partially covered by status tests (AUTH_CACHE_TTL=2s) |
+| TC-23 | Cache TTL expiry - partially covered by status tests (`AUTH_CACHE_TTL=2s`); no dedicated TTL assertion |
 | TC-25 | Concurrent different users - low risk vs TC-24 |
 | TC-28 | Admin seeding idempotent - requires container restart |
 | TC-29 | Empty DCM_ADMIN_SUBJECT - requires separate compose configuration |
-| TC-30 | Auth disabled ignores garbage - covered by other suites |
+| TC-30 | Auth disabled ignores garbage headers - not covered by other suites (they omit auth headers; they do not assert garbage Bearer/proxy headers are ignored) |
 | TC-31 | Compose teardown - infrastructure, not functional |
 | TC-32-35 | Helm chart tests - separate infrastructure (FLPATH-4476) |
+
+### Full-stack / E2E gap automation (TC-36 – TC-42)
+
+| TC | Description | Status |
+|---|---|---|
+| TC-36 | Instance create under auth | ❗ Step 2 blocked (SP auth / FLPATH-4622); Steps 1+3 runnable without SPs |
+| TC-37 | SP registration under auth | ❗ Blocked — needs SP auth (FLPATH-4622); not Ready under Config B today |
+| TC-38 | SP health under auth | ❗ Blocked — same as TC-37 |
+| TC-39 | UI backend M2M (dcm-proxy) | ❗ Blocked by FLPATH-4645 until UI fix (or patched image) |
+| TC-40 | UI /dcm page with auth | ❗ Blocked — depends on TC-39 |
+| TC-41 | ENABLE_DCM_AUTH Jenkins toggle | ❗ Curl smoke manual; pipeline still passes dead `--auth-enabled` to run-e2e.sh |
+| TC-42 | JWKS / Keycloak restart | Not automated — planned utilities E2E |
+
+**0 of 7 E2E gap TCs automated** as of 2026-08-07.
 
 ---
 
@@ -2001,6 +2416,72 @@ Remaining manual-only TCs:
 | 1.5 | 2026-07-20 | Phase 6 review fixes: promoted TC-14/TC-15 to P1 (security-critical), fixed TC-31 container filter from deploy_ to control-plane, replaced container name placeholders with discoverable podman commands |
 | 1.6 | 2026-07-20 | TC-32 Step 2: corrected label selector from `app.kubernetes.io/component=control-plane` to `app.kubernetes.io/name=control-plane` based on actual chart template execution on a lab SNO cluster |
 | 1.7 | 2026-07-22 | Added automation coverage section mapping 22 of 35 TCs to subsystem test suite ([control-plane#32](https://github.com/dcm-project/control-plane/pull/32)). 27 Ginkgo specs cover TC-01, TC-03-07, TC-09-12b, TC-15-21, TC-24, TC-26-27. Remaining 13 TCs documented as manual-only with rationale |
+| 1.8 | 2026-08-05 | Added full-stack/E2E gap TCs TC-36–TC-46 (CLI, UI M2M, SP under auth, instance under auth, wrong audience, alg:none, Jenkins ENABLE_DCM_AUTH, JWKS restart). Clarified TC-08/TC-14 notes; CI port 9080 note; risks for FLPATH-4645 and FLPATH-4478 Closed-without-suite. Total: 46 test cases |
+| 1.8.1 | 2026-08-07 | Review trim: drop CLI + JWT-negative E2E TCs; renumber gaps to TC-36–TC-42; block SP/instance/UI on FLPATH-4622/4645; fix catalog-item-instances API + `health_status`; port convention; Ecosystem Jenkins; TC-08 CP-only; document Jenkins dead `--auth-enabled`; mark TC-02 automated via catalog/policy/sp (`AUTH_DISABLED=true`); clarify TC-30 not covered by those suites. Total numbered TCs: 42 (+ TC-11b/12b) |
+
+---
+
+## Test case checklist
+
+Checkbox = automated (dedicated auth-suite link **or** documented coverage via other subsystem suites). Empty automation link means not automated yet.
+
+**❗** = should cover / blocked dependency (gap or blocker still open even if the base TC is already automated).
+
+Base path for subsystem links: [`dcm-project/control-plane` `test/subsystem/`](https://github.com/dcm-project/control-plane/tree/main/test/subsystem) (`auth/`, `catalog/`, `policy/`, `sp/`).
+
+### Subsystem tests (TC-01 – TC-35)
+
+| Automated | TC | Name | Automation |
+|---|---|---|---|
+| [x] | TC-01 | Health endpoint bypasses auth when auth is enabled | [health_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/health_test.go) |
+| [x] | TC-02 | Auth disabled mode - API requests succeed without auth | [catalog](https://github.com/dcm-project/control-plane/tree/main/test/subsystem/catalog) / [policy](https://github.com/dcm-project/control-plane/tree/main/test/subsystem/policy) / [sp](https://github.com/dcm-project/control-plane/tree/main/test/subsystem/sp) (`AUTH_DISABLED=true`) |
+| [x] | TC-03 | Admin actor and identity seeded on startup | [admin_seed_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/admin_seed_test.go) |
+| [x] | TC-04 | JWT authentication via password grant | [oidc_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/oidc_test.go) |
+| [x] | TC-05 | JWT authentication via client_credentials grant | [oidc_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/oidc_test.go) |
+| [x] | TC-06 | JIT provisioning of new Keycloak user | [jit_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/jit_test.go), [oidc_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/oidc_test.go) |
+| [x] | TC-07 | Proxy header authentication | [proxy_secret_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/proxy_secret_test.go) |
+| [ ] | TC-08 | Provider CRUD via control-plane API with JWT auth | — |
+| [x] | TC-09 | JIT provisioning uses preferred_username for actor username | [jit_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/jit_test.go) |
+| [x] | TC-10 | JIT provisioning falls back to externalID when preferred_username is absent | [jit_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/jit_test.go) |
+| [x] | TC-11 | Second request for same user skips re-provisioning | [jit_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/jit_test.go) |
+| [x] | TC-11b | Username collision during JIT provisioning returns 409 | [race_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/race_test.go) |
+| [x] | TC-12 | Bearer token takes precedence over proxy headers | [proxy_secret_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/proxy_secret_test.go) |
+| [x] | TC-12b | Invalid JWT with valid proxy headers returns 401 (no fallback) | [proxy_secret_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/proxy_secret_test.go) |
+| [ ] | TC-13 | No JWTValidator falls through to proxy path | — |
+| [ ] ❗ | TC-14 | Expired JWT rejected | — ❗ should cover wrong-audience JWT (Config B + curl; needs a Keycloak client **without** the `dcm-api` audience mapper — stock `dcm-proxy`/`dcm-cli` always map `aud=dcm-api`) |
+| [x] ❗ | TC-15 | Forged JWT rejected | [oidc_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/oidc_test.go) — ❗ should cover `alg:none` |
+| [x] | TC-16 | Missing auth headers returns 401 | [proxy_secret_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/proxy_secret_test.go) |
+| [x] | TC-17 | Wrong proxy secret returns 401 | [proxy_secret_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/proxy_secret_test.go) |
+| [x] | TC-18 | Missing subject identifier returns 401 | [proxy_secret_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/proxy_secret_test.go) |
+| [x] | TC-19 | Suspended actor receives 403 | [status_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/status_test.go) |
+| [x] | TC-20 | Deactivated actor receives 403 | [status_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/status_test.go) |
+| [x] | TC-21 | Reactivated actor succeeds after cache expires | [status_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/status_test.go) |
+| [ ] | TC-22 | Cached actor bypasses DB lookup | — |
+| [ ] | TC-23 | Cache entry expires after TTL | — (partial: status tests use short `AUTH_CACHE_TTL`; no dedicated TTL expiry assertion) |
+| [x] | TC-24 | Concurrent first login - same user | [race_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/race_test.go) |
+| [ ] | TC-25 | Concurrent first login - different users | — |
+| [x] | TC-26 | 401 response format is RFC 7807 compliant | [error_format_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/error_format_test.go) |
+| [x] | TC-27 | 403 response format for suspended and deactivated actors | [error_format_test.go](https://github.com/dcm-project/control-plane/blob/main/test/subsystem/auth/error_format_test.go) |
+| [ ] | TC-28 | Admin seeding is idempotent on restart | — |
+| [ ] | TC-29 | Admin seeding skipped when DCM_ADMIN_SUBJECT is empty | — |
+| [ ] | TC-30 | Auth disabled mode ignores garbage auth headers | — (other suites omit auth; they do not assert garbage headers are ignored) |
+| [ ] | TC-31 | Compose stack teardown | — |
+| [ ] | TC-32 | Helm install and pod readiness | — |
+| [ ] | TC-33 | Health endpoint accessible via Helm deployment | — |
+| [ ] | TC-34 | Multi-subsystem CRUD with auth disabled (Helm) | — |
+| [ ] | TC-35 | Helm uninstall cleans up resources | — |
+
+### E2E tests (TC-36 – TC-42)
+
+| Automated | TC | Name | Automation |
+|---|---|---|---|
+| [ ] ❗ | TC-36 | Instance creation under JWT auth (full stack) | — ❗ Step 2 blocked (SP auth / [FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622)); Steps 1+3 OK without SPs |
+| [ ] ❗ | TC-37 | Service provider registration with auth enabled | — ❗ blocked: needs SP→CP auth ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622)); Config B + current SP profiles do not register today |
+| [ ] ❗ | TC-38 | Service provider health remains ready with auth enabled | — ❗ blocked: same as TC-37 |
+| [ ] ❗ | TC-39 | UI / RHDH backend obtains token via dcm-proxy (M2M) | — ❗ blocked: [FLPATH-4645](https://redhat.atlassian.net/browse/FLPATH-4645) (or patched UI image) |
+| [ ] ❗ | TC-40 | UI /dcm page loads data with auth enabled | — ❗ blocked: depends on TC-39 |
+| [ ] ❗ | TC-41 | Jenkins ENABLE_DCM_AUTH toggle smoke | — ❗ curl smoke OK; pipeline still passes dead `--auth-enabled` to `run-e2e.sh` |
+| [ ] | TC-42 | JWKS rotation / Keycloak restart resilience | — |
 
 ---
 
