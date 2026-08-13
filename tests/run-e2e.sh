@@ -57,6 +57,7 @@ Service provider flags (forwarded to deploy-dcm.sh):
 Environment variables:
   DCM_CONTAINER_SP_URL     Container SP direct URL (default: http://localhost:8082/api/v1alpha1)
   DCM_ACM_CLUSTER_SP_URL   ACM Cluster SP direct URL (default: http://localhost:8083/api/v1alpha1)
+  DCM_KUBEVIRT_SP_URL      KubeVirt SP direct URL (default: http://localhost:8081/api/v1alpha1)
   DCM_NATS_URL             NATS URL for event tests (default: nats://localhost:4222)
   DCM_GATEWAY_URL          Control plane API URL (default: http://localhost:8080/api/v1alpha1)
 
@@ -158,6 +159,8 @@ JUNIT_REPORT=""
 DEPLOY_ARGS=()
 ENABLE_CONTAINER_SP=false
 ENABLE_ACM_CLUSTER_SP=false
+ENABLE_KUBEVIRT_SP=false
+KUBEVIRT_VM_NS_ARG=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -198,6 +201,7 @@ while [[ $# -gt 0 ]]; do
         --all-service-providers)
             ENABLE_CONTAINER_SP=true
             ENABLE_ACM_CLUSTER_SP=true
+            ENABLE_KUBEVIRT_SP=true
             DEPLOY_ARGS+=("$1")
             shift ;;
         --acm-cluster-service-provider)
@@ -205,12 +209,17 @@ while [[ $# -gt 0 ]]; do
             DEPLOY_ARGS+=("$1")
             shift ;;
         --kubevirt-service-provider)
+            ENABLE_KUBEVIRT_SP=true
             DEPLOY_ARGS+=("$1")
             shift ;;
         --deploy-acm|--deploy-mce)
             DEPLOY_ARGS+=("$1")
             shift ;;
-        --compose-file|--kubeconfig|--k8s-container-namespace|--acm-cluster-namespace|--kubevirt-vm-namespace|--cluster-api|--cluster-username|--cluster-password|--acm-cluster-sp-repo|--acm-cluster-sp-branch)
+        --compose-file|--kubeconfig|--k8s-container-namespace|--acm-cluster-namespace|--cluster-api|--cluster-username|--cluster-password|--acm-cluster-sp-repo|--acm-cluster-sp-branch)
+            DEPLOY_ARGS+=("$1" "$2")
+            shift 2 ;;
+        --kubevirt-vm-namespace)
+            KUBEVIRT_VM_NS_ARG="$2"
             DEPLOY_ARGS+=("$1" "$2")
             shift 2 ;;
         --help)
@@ -266,6 +275,16 @@ fi
 if [[ "${ENABLE_ACM_CLUSTER_SP}" == "true" ]]; then
     export DCM_ACM_CLUSTER_SP_URL="${DCM_ACM_CLUSTER_SP_URL:-http://localhost:8083/api/v1alpha1}"
     info "DCM_ACM_CLUSTER_SP_URL=${DCM_ACM_CLUSTER_SP_URL}"
+fi
+if [[ "${ENABLE_KUBEVIRT_SP}" == "true" ]]; then
+    export DCM_KUBEVIRT_SP_URL="${DCM_KUBEVIRT_SP_URL:-http://localhost:8081/api/v1alpha1}"
+    info "DCM_KUBEVIRT_SP_URL=${DCM_KUBEVIRT_SP_URL}"
+    # Keep Ginkgo cluster lookups in the same NS the SP uses (compose KUBERNETES_NAMESPACE).
+    if [[ -z "${KUBERNETES_NAMESPACE:-}" ]]; then
+        export KUBERNETES_NAMESPACE="${KUBEVIRT_VM_NS_ARG:-${KUBEVIRT_VM_NAMESPACE:-vms}}"
+    fi
+    export KUBEVIRT_VM_NAMESPACE="${KUBEVIRT_VM_NAMESPACE:-${KUBERNETES_NAMESPACE}}"
+    info "KUBERNETES_NAMESPACE=${KUBERNETES_NAMESPACE}"
 fi
 
 # Build ginkgo arguments.

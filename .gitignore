@@ -2,6 +2,9 @@
 dcm-versions.json
 dcm-cli-version.json
 
+# Local/hypervisor-only kubevirt E2E leftover cleaner (not part of the suite)
+scripts/cleanup-kubevirt-e2e.sh
+
 # Go test binary and JUnit reports
 tests/e2e/*.test
 *.xml
