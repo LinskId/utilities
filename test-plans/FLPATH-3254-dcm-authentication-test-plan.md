@@ -4,9 +4,9 @@
 |---|---|
 | **Epic** | [FLPATH-3254](https://redhat.atlassian.net/browse/FLPATH-3254) |
 | **Author** | Chad Crum |
-| **Contributors** | Vlad Kolodny (v1.8 E2E / full-stack gap TCs; review trim) |
-| **Version** | 1.8.1 |
-| **Last Updated** | 2026-08-07 |
+| **Contributors** | Vlad Kolodny (v1.8 E2E / full-stack gap TCs; v1.9 /providers→/agents migration) |
+| **Version** | 1.9 |
+| **Last Updated** | 2026-08-19 |
 | **Target Release** | DCM 1.0 |
 | **Status** | In progress — plan complete; P1 E2E execution blocked on FLPATH-4622 / FLPATH-4645 |
 
@@ -59,6 +59,8 @@ Known P1 execution blockers today: [FLPATH-4622](https://redhat.atlassian.net/br
 - Network access to `quay.io` for pulling container images
 
 > **CI note:** On Ecosystem Jenkins `flightpath-dcm-deploy`, the control-plane host port is remapped **8080 → 9080** to avoid conflicts (FLPATH-4421). Use `http://localhost:9080` for API calls in CI; local `make compose-up` still uses `8080`. Keycloak remains on host port `8180`.
+
+> **⚠️ API change ([control-plane#51](https://github.com/dcm-project/control-plane/pull/51)):** The `/providers` endpoint has been **removed** and replaced by `/agents`. All curl examples in this plan have been updated to use `/api/v1alpha1/catalog-items` (for simple auth verification) or `/api/v1alpha1/agents` (for CRUD operations). TC-08 and TC-34 use the agent API directly.
 
 ### Deployment Configurations
 
@@ -194,7 +196,7 @@ curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/health
 **Step 2: Confirm a non-health endpoint is rejected without auth**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `{"type":"UNAUTHENTICATED","status":401,"title":"Unauthorized","detail":"missing authentication"}`.
@@ -222,29 +224,21 @@ With `AUTH_DISABLED=true` (default compose), all API requests succeed without au
 
 #### Steps
 
-**Step 1: List providers without auth headers**
+**Step 1: List catalog items without auth headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
-**Expected:** HTTP 200 with `{"providers":[]}` or `{"providers":[...]}`. No 401 or 403.
+**Expected:** HTTP 200 with `{"next_page_token":"","results":[...]}`. No 401 or 403.
 
-**Step 2: Create a provider without auth headers**
+**Step 2: Register an agent without auth headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -X POST http://localhost:8080/api/v1alpha1/providers -H 'Content-Type: application/json' -d '{"name":"auth-disabled-test","service_type":"compute","endpoint":"http://example.com","schema_version":"v1alpha1","operations":{"provision":{"path":"/provision"},"deprovision":{"path":"/deprovision"}}}'
+curl -s -w '\nHTTP %{http_code}\n' -X POST http://localhost:8080/api/v1alpha1/agents -H 'Content-Type: application/json' -d '{"name":"auth-disabled-test","environment":"test","service_types":["vm"],"cost":"low","topic_name":"dcm.agent.auth-disabled-test"}'
 ```
 
-**Expected:** HTTP 201 with provider JSON containing a generated `id`.
-
-**Step 3: Delete the test provider**
-
-```bash
-curl -s -X DELETE -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/providers/<id-from-step-2>
-```
-
-**Expected:** HTTP 204.
+**Expected:** HTTP 201 with agent JSON containing a generated `agent_id`.
 
 #### Cleanup
 
@@ -329,10 +323,10 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, preferred_userna
 **Step 3: Call API with Bearer token**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
-**Expected:** HTTP 200 with providers JSON array.
+**Expected:** HTTP 200 with catalog items JSON.
 
 #### Cleanup
 
@@ -377,7 +371,7 @@ echo "$SA_TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, preferred_use
 **Step 3: Call API with service account token**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $SA_TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $SA_TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -444,7 +438,7 @@ JIT_TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<D
 **Step 4: First API call triggers JIT provisioning**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -492,7 +486,7 @@ Validates the proxy-header fallback auth path. A valid `X-Auth-Proxy-Secret` cau
 **Step 1: Send request with valid proxy headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Admin actor resolved from `X-Forwarded-User`.
@@ -500,7 +494,7 @@ curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>'
 **Step 2: Verify preferred username header is propagated**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' -H 'X-Forwarded-Preferred-Username: dcm-admin' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' -H 'X-Forwarded-Preferred-Username: dcm-admin' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -511,16 +505,18 @@ None.
 
 ---
 
-### TC-08: Provider CRUD via control-plane API with JWT auth
+### TC-08: Agent CRUD via control-plane API with JWT auth
 
 **Priority:** P1 (critical)
 **Type:** Functional
-**Method:** Manual
+**Method:** Automated (subsystem) | `provider_crud_test.go` → `agent_crud_test.go`
 **Requires:** TC-04
+
+> **History:** Originally "Provider CRUD" — [control-plane#51](https://github.com/dcm-project/control-plane/pull/51) replaced the `/providers` API with `/agents` (agent-based architecture over NATS). Updated to target the agent registration/list/get lifecycle.
 
 #### Description
 
-Validates authentication through the **control-plane API** only (JWT on provider create / list / get / delete via `curl`). No service providers or full-stack instance path. Full-stack instance lifecycle under auth is TC-36.
+Validates authentication through the **control-plane API** only (JWT on agent register / list / get via `curl`). Proves the auth middleware correctly gates the agent management endpoints under Config B. No full-stack instance path (that is TC-36).
 
 #### Prerequisites
 
@@ -536,49 +532,61 @@ TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_P
 
 **Expected:** Token obtained.
 
-**Step 2: Create a provider**
+**Step 2: Register an agent**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"name":"crud-test-provider","service_type":"compute","endpoint":"http://example.com","schema_version":"v1alpha1","operations":{"provision":{"path":"/provision"},"deprovision":{"path":"/deprovision"}}}' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"tc08-crud-agent","environment":"test","service_types":["vm","container"],"cost":"low","topic_name":"dcm.agent.tc08-crud-agent"}' \
+  http://localhost:8080/api/v1alpha1/agents
 ```
 
-**Expected:** HTTP 201 with provider JSON. Note the `id`.
+**Expected:** HTTP 201 (first run) or HTTP 200 (re-run — registration is idempotent by name). Response includes `agent_id`.
 
-**Step 3: List providers**
+**Step 3: List agents**
 
 ```bash
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers | jq '.providers[].name'
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/agents | jq '.agents[].name'
 ```
 
-**Expected:** Output includes `"crud-test-provider"`.
+**Expected:** Output includes `"tc08-crud-agent"`.
 
-**Step 4: Get provider by ID**
+**Step 4: Get agent by ID**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers/<id-from-step-2>
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/agents/<agent_id-from-step-2>
 ```
 
-**Expected:** HTTP 200 with matching provider.
+**Expected:** HTTP 200 with matching agent.
 
-**Step 5: Delete provider**
+**Step 5: Re-register agent (idempotent update)**
 
 ```bash
-curl -s -X DELETE -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers/<id-from-step-2>
+curl -s -w '\nHTTP %{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"tc08-crud-agent","environment":"test-updated","service_types":["vm","container"],"cost":"medium","topic_name":"dcm.agent.tc08-crud-agent"}' \
+  http://localhost:8080/api/v1alpha1/agents
 ```
 
-**Expected:** HTTP 204.
+**Expected:** HTTP 200 (not 201) — same `agent_id`, updated fields.
 
-**Step 6: Verify deletion**
+**Step 6: Unauthenticated register must fail**
 
 ```bash
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers/<id-from-step-2>
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"unauth-agent","environment":"test","service_types":["vm"],"cost":"low","topic_name":"dcm.agent.unauth-agent"}' \
+  http://localhost:8080/api/v1alpha1/agents
 ```
 
-**Expected:** HTTP 404.
+**Expected:** HTTP 401.
 
 #### Cleanup
 
-None - provider deleted in step 5.
+No DELETE endpoint for agents (FK constraints preserve resource→agent history). For manual testers:
+
+```bash
+PGPASSWORD=<POSTGRES_PASSWORD> psql -h localhost -U <POSTGRES_USER> -d control-plane -c "DELETE FROM agents WHERE name LIKE 'tc08-crud-%';"
+```
+
+Alternatively, `make compose-down -v` destroys the Postgres volume and all data.
 
 ---
 
@@ -635,7 +643,7 @@ When no `preferred_username` is available (proxy path without the preferred user
 
 ```bash
 NEW_UUID=$(uuidgen)
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H "X-Forwarded-User: $NEW_UUID" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H "X-Forwarded-User: $NEW_UUID" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Actor JIT-provisioned.
@@ -675,7 +683,7 @@ After JIT provisioning on first login, subsequent requests for the same user res
 
 ```bash
 JIT_TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=jit-test-user&password=<TEST_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -716,7 +724,7 @@ The proxy-header path is used here because it allows independent control of subj
 **Step 1: JIT-provision user A with a shared username via proxy headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa' -H 'X-Forwarded-Preferred-Username: collision-test-user' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa' -H 'X-Forwarded-Preferred-Username: collision-test-user' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Actor created with `username=collision-test-user`, `external_id=aaaaaaaa-1111-...`.
@@ -732,7 +740,7 @@ PGPASSWORD=<POSTGRES_PASSWORD> psql -h localhost -U <POSTGRES_USER> -d control-p
 **Step 3: JIT-provision user B with the same username but different external ID**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb' -H 'X-Forwarded-Preferred-Username: collision-test-user' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb' -H 'X-Forwarded-Preferred-Username: collision-test-user' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 409 with `"detail":"username already in use by another account"`.
@@ -774,7 +782,7 @@ When both `Authorization: Bearer` and `X-Auth-Proxy-Secret` + `X-Forwarded-User`
 
 ```bash
 TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: different-subject' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: different-subject' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Identity comes from JWT claims (`sub = 56deb662-...`), not proxy headers.
@@ -805,7 +813,7 @@ When a JWTValidator is configured (Config B) and a request sends an invalid Bear
 **Step 1: Send invalid JWT with valid proxy headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer <INVALID_JWT>' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer <INVALID_JWT>' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `"detail":"invalid bearer token"`. The proxy headers are NOT evaluated.
@@ -836,7 +844,7 @@ When `AUTH_ISSUER_URL` is not set (no JWTValidator configured), Bearer tokens ar
 **Step 1: Send request with Bearer token and valid proxy headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer <INVALID_JWT>' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer <INVALID_JWT>' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Bearer token ignored (no validator). Identity from proxy headers.
@@ -877,7 +885,7 @@ sleep 310
 **Step 2: Send request with expired token**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `"detail":"invalid bearer token"`.
@@ -908,7 +916,7 @@ A JWT with an invalid signature is rejected. The control-plane verifies signatur
 **Step 1: Send request with forged Bearer token**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer <FORGED_JWT>' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer <FORGED_JWT>' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `"detail":"invalid bearer token"`.
@@ -939,7 +947,7 @@ A request with no auth headers (no Bearer, no proxy secret) is rejected with 401
 **Step 1: Send request with no auth headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `{"type":"UNAUTHENTICATED","status":401,"title":"Unauthorized","detail":"missing authentication"}`.
@@ -947,7 +955,7 @@ curl -s -w '\nHTTP %{http_code}\n' http://localhost:8080/api/v1alpha1/providers
 **Step 2: Verify WWW-Authenticate and Content-Type headers**
 
 ```bash
-curl -s -D- -o /dev/null http://localhost:8080/api/v1alpha1/providers 2>/dev/null | grep -iE 'content-type|www-authenticate'
+curl -s -D- -o /dev/null http://localhost:8080/api/v1alpha1/catalog-items 2>/dev/null | grep -iE 'content-type|www-authenticate'
 ```
 
 **Expected:** `Content-Type: application/problem+json` and `WWW-Authenticate: Bearer`.
@@ -978,7 +986,7 @@ A request with an incorrect `X-Auth-Proxy-Secret` is rejected. The comparison us
 **Step 1: Send request with wrong proxy secret**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: wrong-secret' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: wrong-secret' -H 'X-Forwarded-User: 56deb662-4820-5d83-b828-f4beb11a5fa7' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `"detail":"invalid proxy secret"`.
@@ -1009,7 +1017,7 @@ Valid proxy secret with missing or empty `X-Forwarded-User` is rejected.
 **Step 1: Valid proxy secret, no user header**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `"detail":"missing subject identifier"`.
@@ -1017,7 +1025,7 @@ curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>'
 **Step 2: Valid proxy secret, empty user header**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: ' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H 'X-Forwarded-User: ' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 401 with `"detail":"missing subject identifier"`.
@@ -1065,7 +1073,7 @@ sleep 5
 
 ```bash
 JIT_TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=jit-test-user&password=<TEST_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 403 with `{"type":"PERMISSION_DENIED","status":403,"title":"Forbidden","detail":"account suspended"}`.
@@ -1121,7 +1129,7 @@ PGPASSWORD=<POSTGRES_PASSWORD> psql -h localhost -U <POSTGRES_USER> -d control-p
 podman restart $(podman ps --filter 'label=com.docker.compose.service=control-plane' --format '{{.Names}}')
 sleep 5
 JIT_TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=jit-test-user&password=<TEST_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 403 with `"detail":"account deactivated"`.
@@ -1162,7 +1170,7 @@ An actor that was suspended and then reactivated can access the API again after 
 
 ```bash
 JIT_TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=jit-test-user&password=<TEST_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $JIT_TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -1194,7 +1202,7 @@ After the first request resolves an actor from the database, subsequent requests
 
 ```bash
 TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -1202,7 +1210,7 @@ curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" 
 **Step 2: Send second request immediately (should hit cache)**
 
 ```bash
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Control-plane logs should not show a DB query for actor resolution on this request.
@@ -1241,7 +1249,7 @@ AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUD
 
 ```bash
 TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -1250,7 +1258,7 @@ curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" 
 
 ```bash
 sleep 6
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Cache miss triggers fresh DB lookup.
@@ -1288,7 +1296,7 @@ When multiple concurrent requests arrive for a new user, only one actor and one 
 
 ```bash
 NEW_UUID=$(uuidgen)
-seq 10 | xargs -P10 -I{} curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H "X-Forwarded-User: $NEW_UUID" -H 'X-Forwarded-Preferred-Username: race-test-user' http://localhost:8080/api/v1alpha1/providers
+seq 10 | xargs -P10 -I{} curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H "X-Forwarded-User: $NEW_UUID" -H 'X-Forwarded-Preferred-Username: race-test-user' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** All 10 requests return HTTP 200.
@@ -1330,7 +1338,7 @@ Multiple new users arriving concurrently each get their own actor with no cross-
 ```bash
 for i in $(seq 5); do
   UUID=$(uuidgen)
-  curl -s -o /dev/null -w "User $i: %{http_code}\n" -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H "X-Forwarded-User: $UUID" -H "X-Forwarded-Preferred-Username: concurrent-user-$i" http://localhost:8080/api/v1alpha1/providers &
+  curl -s -o /dev/null -w "User $i: %{http_code}\n" -H 'X-Auth-Proxy-Secret: <AUTH_PROXY_SECRET>' -H "X-Forwarded-User: $UUID" -H "X-Forwarded-Preferred-Username: concurrent-user-$i" http://localhost:8080/api/v1alpha1/catalog-items &
 done
 wait
 ```
@@ -1371,7 +1379,7 @@ All 401 responses use `application/problem+json` content type and contain the re
 **Step 1: Trigger a 401 and validate response structure**
 
 ```bash
-curl -s -D- http://localhost:8080/api/v1alpha1/providers
+curl -s -D- http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:**
@@ -1544,7 +1552,7 @@ When `AUTH_DISABLED=true`, the middleware does not inspect auth headers at all. 
 **Step 1: Send request with garbage headers**
 
 ```bash
-curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: garbage' -H 'X-Forwarded-User: garbage' -H 'Authorization: Bearer garbage' http://localhost:8080/api/v1alpha1/providers
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-Auth-Proxy-Secret: garbage' -H 'X-Forwarded-User: garbage' -H 'Authorization: Bearer garbage' http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200. Headers irrelevant when `AUTH_DISABLED=true`.
@@ -1705,10 +1713,10 @@ curl -s "http://$CP_URL/api/v1alpha1/health"
 **Step 3: Verify API responds without auth headers**
 
 ```bash
-curl -sk "https://$CP_URL/api/v1alpha1/providers"
+curl -sk "https://$CP_URL/api/v1alpha1/catalog-items"
 ```
 
-**Expected:** HTTP 200 with `{"providers":[]}`. No authentication required because `AUTH_DISABLED` defaults to `true`.
+**Expected:** HTTP 200 with `{"next_page_token":"","results":[...]}`. No authentication required because `AUTH_DISABLED` defaults to `true`.
 
 #### Cleanup
 
@@ -1729,7 +1737,7 @@ kill $PF_PID 2>/dev/null
 
 #### Description
 
-Exercise multiple control-plane subsystems (service providers, catalog service-types, catalog items) through the Helm-deployed API with auth disabled. Verifies more than one component is functional end-to-end, not just health.
+Exercise multiple control-plane subsystems (agents, catalog service-types, catalog items) through the Helm-deployed API with auth disabled. Verifies more than one component is functional end-to-end, not just health.
 
 #### Prerequisites
 
@@ -1753,21 +1761,21 @@ CP_URL="localhost:8080"
 SCHEME="http"
 ```
 
-**Step 2: Create a service provider**
+**Step 2: Register an agent**
 
 ```bash
-curl -sk -X POST "$SCHEME://$CP_URL/api/v1alpha1/providers" -H 'Content-Type: application/json' -d '{"name":"helm-smoke-sp","service_type":"vm","endpoint":"http://example.com/api/v1alpha1","schema_version":"v1alpha1"}' -w '\nHTTP %{http_code}\n'
+curl -sk -X POST "$SCHEME://$CP_URL/api/v1alpha1/agents" -H 'Content-Type: application/json' -d '{"name":"helm-smoke-agent","environment":"test","service_types":["vm"],"cost":"low","topic_name":"dcm.agent.helm-smoke-agent"}' -w '\nHTTP %{http_code}\n'
 ```
 
-**Expected:** HTTP 201 with the created provider JSON including an `id` field.
+**Expected:** HTTP 201 (first run) or HTTP 200 (re-run — registration is idempotent by name). Response includes `agent_id`.
 
-**Step 3: List service providers**
+**Step 3: List agents**
 
 ```bash
-curl -sk "$SCHEME://$CP_URL/api/v1alpha1/providers" -w '\nHTTP %{http_code}\n'
+curl -sk "$SCHEME://$CP_URL/api/v1alpha1/agents" -w '\nHTTP %{http_code}\n'
 ```
 
-**Expected:** HTTP 200 with `{"providers":[...]}` containing `helm-smoke-sp`.
+**Expected:** HTTP 200 with `{"agents":[...]}` containing `helm-smoke-agent`.
 
 **Step 4: List catalog service-types**
 
@@ -1783,7 +1791,7 @@ curl -sk "$SCHEME://$CP_URL/api/v1alpha1/service-types" -w '\nHTTP %{http_code}\
 curl -sk "$SCHEME://$CP_URL/api/v1alpha1/catalog-items" -w '\nHTTP %{http_code}\n'
 ```
 
-**Expected:** HTTP 200. Confirms the catalog item subsystem responds independently of providers.
+**Expected:** HTTP 200. Confirms the catalog item subsystem responds independently of agents.
 
 **Step 6: List policies**
 
@@ -1793,26 +1801,9 @@ curl -sk "$SCHEME://$CP_URL/api/v1alpha1/policies" -w '\nHTTP %{http_code}\n'
 
 **Expected:** HTTP 200. Confirms the policy subsystem is serving requests.
 
-**Step 7: Delete the service provider**
-
-```bash
-SP_ID=$(curl -sk "$SCHEME://$CP_URL/api/v1alpha1/providers" | jq -r '.providers[] | select(.name=="helm-smoke-sp") | .id // empty')
-curl -sk -X DELETE "$SCHEME://$CP_URL/api/v1alpha1/providers/$SP_ID" -w '\nHTTP %{http_code}\n'
-```
-
-**Expected:** HTTP 204. Provider deleted.
-
-**Step 8: Verify deletion**
-
-```bash
-curl -sk "$SCHEME://$CP_URL/api/v1alpha1/providers" -w '\nHTTP %{http_code}\n'
-```
-
-**Expected:** HTTP 200 with `{"providers":[]}` - `helm-smoke-sp` no longer present.
-
 #### Cleanup
 
-If using port-forward:
+Agent remains in DB (no DELETE endpoint). Helm uninstall in TC-35 removes everything.
 
 ```bash
 kill $PF_PID 2>/dev/null
@@ -1896,7 +1887,7 @@ export DCM_API_URL=http://localhost:8080
 Confirm unauthenticated API fails before running client TCs:
 
 ```bash
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' "${DCM_API_URL}/api/v1alpha1/providers"
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' "${DCM_API_URL}/api/v1alpha1/catalog-items"
 # Expected: 401
 # CI: DCM_API_URL=http://localhost:9080
 ```
@@ -2003,12 +1994,12 @@ podman ps --format '{{.Names}} {{.Status}}' | grep -E 'k8s-container|kubevirt|ac
 
 **Expected:** SP container(s) Up.
 
-**Step 2: List providers with admin JWT**
+**Step 2: List registered service providers (agents) with admin JWT**
 
 ```bash
 TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
   http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers | jq '.providers[].name'
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/agents | jq '.agents[].name'
 ```
 
 **Expected:** Expected SP name(s) present (e.g. `k8s-container-provider`).
@@ -2038,15 +2029,15 @@ After registration, SP health reported by the control-plane stays ready/healthy 
 
 #### Steps
 
-**Step 1: Poll provider health via authenticated API**
+**Step 1: Poll SP health via authenticated agent API**
 
 ```bash
 TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
   http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/providers | jq '.providers[] | {name, health_status}'
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/agents | jq '.agents[] | {name, health_status}'
 ```
 
-**Expected:** Registered SPs report ready/healthy via `health_status` (or documented known-unhealthy exceptions such as ACM SP GVK scheme issues tracked separately).
+**Expected:** Registered agents report ready/healthy via `health_status` (or documented known-unhealthy exceptions such as ACM SP GVK scheme issues tracked separately).
 
 **Step 2: SP container logs show no repeated 401 to control-plane**
 
@@ -2170,7 +2161,7 @@ Validates pipeline wiring: with `ENABLE_DCM_AUTH=true`, control-plane enforces a
 
 **Step 1: Run deploy with `ENABLE_DCM_AUTH=false` (default)**
 
-**Expected:** Unauthenticated `GET /api/v1alpha1/providers` → 200.
+**Expected:** Unauthenticated `GET /api/v1alpha1/catalog-items` → 200.
 
 **Step 2: Run deploy with `ENABLE_DCM_AUTH=true`**
 
@@ -2178,7 +2169,7 @@ Confirm the job sets control-plane auth env (`AUTH_DISABLED=false`, `AUTH_ISSUER
 
 > **❗ Pipeline gap:** Ecosystem Jenkins `dcm_deploy.groovy` (upstream) still passes `--auth-enabled --keycloak-url …` into `tests/run-e2e.sh` when `ENABLE_DCM_AUTH=true`. Those flags are **not** defined on `run-e2e.sh` / `deploy-dcm.sh` today — auth is env-driven only. Enabling the E2E stage with that dead flag will fail; track a pipeline fix separately. This TC is deploy-env + curl smoke, not “E2E suite with `--auth-enabled`”.
 
-**Expected:** Unauthenticated providers → 401; authenticated Bearer → 200.
+**Expected:** Unauthenticated API call → 401; authenticated Bearer → 200.
 
 #### Cleanup
 
@@ -2209,7 +2200,7 @@ After Keycloak restart (or JWKS key change), new tokens must work. Documents exp
 TOKEN=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
   http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
 curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1alpha1/providers
+  http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200.
@@ -2228,7 +2219,7 @@ until curl -sf http://localhost:8180/realms/dcm/.well-known/openid-configuration
 TOKEN2=$(curl -s -d 'grant_type=password&client_id=dcm-proxy&client_secret=<DCM_PROXY_SECRET>&username=dcm-admin&password=<DCM_DEV_USER_PASSWORD>' \
   http://localhost:8180/realms/dcm/protocol/openid-connect/token | jq -r .access_token)
 curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN2" \
-  http://localhost:8080/api/v1alpha1/providers
+  http://localhost:8080/api/v1alpha1/catalog-items
 ```
 
 **Expected:** HTTP 200 with the new token. Document whether the pre-restart `TOKEN` still works (depends on key stability across restart).
