@@ -67,7 +67,9 @@ Service providers are defined declaratively in `providers/*.conf` files. Each co
 
 **To add a new provider:** drop a `.conf` file in `providers/` and (if needed) add a validation hook function in `deploy-dcm.sh`. No other changes to the deploy script are required — flags, usage, arg parsing, and env exports are all generated from the registry.
 
-Current providers: `kubevirt`, `k8s-container`, `acm-cluster`, `three-tier-app-demo`, `three-tier-app-demo-2`, `three-tier-app-demo-3`.
+Current providers: `kubevirt`, `k8s-container`, `k8s-storage`, `acm-cluster`, `three-tier-app-demo`, `three-tier-app-demo-2`, `three-tier-app-demo-3`.
+
+Host ports published for direct SP access (compose overrides): KubeVirt **8081**, k8s-container **8082**, ACM cluster **8083**, three-tier **8084**–**8086**, k8s-container-2/3 **8087**–**8088**, k8s-storage **8089**.
 
 ### Script Structure
 
@@ -81,7 +83,9 @@ The script is organized into sections separated by comment banners. Key function
 | `tear_down` | Stops containers, removes volumes, deletes deploy dir |
 | `resolve_kubeconfig` | Resolves cluster credentials (kubeconfig file, existing session, or `oc login`) |
 | `validate_kubevirt_provider` | Checks CNV CRDs and creates namespace via `oc` |
-| `validate_k8s_container_provider` | Creates namespace via `oc` or `kubectl` |
+| `ensure_provider_namespace` | Ensures a namespace exists via `oc` or `kubectl` |
+| `validate_k8s_container_provider` | Validates k8s container SP prerequisites |
+| `validate_k8s_storage_provider` | Validates k8s storage SP prerequisites |
 | `validate_acm_cluster_provider` | Validates ACM cluster SP prerequisites |
 | `resolve_provider_cli` | Resolves `oc`/`kubectl` per provider's `CLI_REQUIREMENT` |
 | `collect_provider_compose` | Collects compose profiles/overrides for an enabled provider |
@@ -199,6 +203,7 @@ CLI tests are skipped (not failed) if no binary is available.
 - CLI tests use `os/exec` to run the actual binary (not in-process Cobra)
 - `DCM_GATEWAY_URL` env var overrides the control plane API endpoint (default: `http://localhost:8080/api/v1alpha1`)
 - `DCM_CONTAINER_SP_URL` env var overrides the container SP endpoint (default: `http://localhost:8082/api/v1alpha1`)
+- `DCM_STORAGE_SP_URL` env var overrides the storage SP endpoint (default: `http://localhost:8089/api/v1alpha1`)
 - `DCM_ACM_CLUSTER_SP_URL` env var overrides the ACM cluster SP endpoint (default: `http://localhost:8083/api/v1alpha1`)
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
 - `DCM_CLI_PATH` env var specifies the CLI binary path

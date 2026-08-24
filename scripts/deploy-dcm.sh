@@ -30,6 +30,7 @@ readonly VERSION_ENV_VARS=(
     DCM_UI_VERSION
     KUBEVIRT_SERVICE_PROVIDER_VERSION
     K8S_CONTAINER_SERVICE_PROVIDER_VERSION
+    K8S_STORAGE_SERVICE_PROVIDER_VERSION
     ACM_CLUSTER_SERVICE_PROVIDER_VERSION
     THREE_TIER_DEMO_SERVICE_PROVIDER_VERSION
 )
@@ -185,6 +186,7 @@ Examples:
   $(basename "$0") --control-plane-branch feature-x
   $(basename "$0") --kubevirt-service-provider --kubeconfig ~/.kube/config
   $(basename "$0") --k8s-container-service-provider
+  $(basename "$0") --k8s-storage-service-provider --kubeconfig ~/.kube/config
   $(basename "$0") --all-service-providers --cluster-api https://api.cluster.example.com --cluster-password secret
   $(basename "$0") --acm-cluster-service-provider --deploy-acm --kubeconfig ~/.kube/config
   $(basename "$0") --tear-down
@@ -317,12 +319,10 @@ validate_kubevirt_provider() {
     info "Namespace '${namespace}' is ready"
 }
 
-validate_k8s_container_provider() {
+ensure_provider_namespace() {
     local kubeconfig="$1"
     local namespace="$2"
     local cli="$3"
-
-    log "Validating k8s container provider prerequisites"
 
     info "Ensuring namespace '${namespace}' exists..."
     if ! "${cli}" --kubeconfig="${kubeconfig}" get namespace "${namespace}" &>/dev/null; then
@@ -332,18 +332,23 @@ validate_k8s_container_provider() {
     info "Namespace '${namespace}' is ready"
 }
 
+validate_k8s_container_provider() {
+    log "Validating k8s container provider prerequisites"
+    ensure_provider_namespace "$1" "$2" "$3"
+}
+
+validate_k8s_storage_provider() {
+    log "Validating k8s storage provider prerequisites"
+    ensure_provider_namespace "$1" "$2" "$3"
+}
+
 validate_acm_cluster_provider() {
     local kubeconfig="$1"
     local namespace="$2"
 
     log "Validating ACM cluster provider prerequisites"
 
-    info "Ensuring namespace '${namespace}' exists..."
-    if ! oc --kubeconfig="${kubeconfig}" get namespace "${namespace}" &>/dev/null; then
-        info "Creating namespace '${namespace}'..."
-        oc --kubeconfig="${kubeconfig}" create namespace "${namespace}"
-    fi
-    info "Namespace '${namespace}' is ready"
+    ensure_provider_namespace "${kubeconfig}" "${namespace}" oc
 
     # Resolve pull secret for the SP. Order:
     #   1. ACM_CLUSTER_SP_PULL_SECRET env var (already set by user)

@@ -7,6 +7,7 @@ Deploy the full DCM stack for E2E testing using `scripts/deploy-dcm.sh`.
 1. **Required tools**: `git`, `podman`, `podman-compose`, `curl`, `jq`
 2. **For KubeVirt provider**: `oc` (OCP cluster with CNV installed)
 3. **For k8s container provider**: `oc` or `kubectl` (any Kubernetes cluster)
+4. **For k8s storage provider**: `oc` or `kubectl` (any Kubernetes cluster)
 
 ## Commands
 
@@ -56,6 +57,12 @@ Deploy the full DCM stack for E2E testing using `scripts/deploy-dcm.sh`.
 ./scripts/deploy-dcm.sh --k8s-container-service-provider --kubeconfig ~/.kube/config
 ```
 
+### Deploy with k8s Storage Service Provider
+```bash
+# Requires control-plane compose with the storage profile (host port 8089)
+./scripts/deploy-dcm.sh --k8s-storage-service-provider --kubeconfig ~/.kube/config
+```
+
 ### Deploy with KubeVirt Service Provider
 ```bash
 ./scripts/deploy-dcm.sh --kubevirt-service-provider --kubeconfig ~/.kube/config
@@ -96,6 +103,7 @@ When any service provider is enabled, the script resolves cluster access in this
 | `KUBECONFIG` | `--kubeconfig` |
 | `KUBEVIRT_VM_NAMESPACE` | `--kubevirt-vm-namespace` |
 | `K8S_CONTAINER_SP_NAMESPACE` | `--k8s-container-namespace` |
+| `K8S_STORAGE_SP_NAMESPACE` | `--k8s-storage-namespace` |
 | `OPENSHIFT_API` | `--cluster-api` |
 | `OPENSHIFT_USERNAME` | `--cluster-username` |
 | `OPENSHIFT_PASSWORD` | `--cluster-password` |
