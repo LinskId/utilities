@@ -14,40 +14,28 @@ import (
 
 var _ = Describe("Service Type Instances API", func() {
 	Context("service_type filter", Ordered, func() {
-		var containerProviderName string
+		var containerAgentName string
 		var policyID, catalogItemID, instanceID, resourceID string
 
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			By("discovering the container agent")
+			containerAgentName = discoverAgentByServiceType("container", "")
+			GinkgoWriter.Printf("Using container agent: %s\n", containerAgentName)
 
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty(), "no container providers registered")
-
-			p := providers[0].(map[string]interface{})
-			containerProviderName, _ = p["name"].(string)
-			Expect(containerProviderName).NotTo(BeEmpty())
-			GinkgoWriter.Printf("Using container provider: %s\n", containerProviderName)
-
-			By("creating a routing policy to direct traffic to the container provider")
+			By("creating a routing policy to direct traffic to the container agent")
 			polName := uniqueName("e2e-filter-pol")
 			pkgName := fmt.Sprintf("e2e_filter_%d", time.Now().UnixNano()%1000000)
 			polPayload := fmt.Sprintf(`{
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E instance filter test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
-			}`, polName, pkgName, containerProviderName)
+				"description": "E2E instance filter test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
+			}`, polName, pkgName, containerAgentName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -256,9 +244,9 @@ var _ = Describe("Service Type Instances API", func() {
 				"unfiltered list should include instance %s", resourceID)
 		})
 
-		It("combines service_type with provider filter", func() {
+		It("combines service_type with agent_name filter", func() {
 			resp, err := doRequest(http.MethodGet,
-				"/service-type-instances?service_type=container&provider="+containerProviderName, "")
+				"/service-type-instances?service_type=container&agent_name="+containerAgentName, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -275,9 +263,9 @@ var _ = Describe("Service Type Instances API", func() {
 				if i["id"] == resourceID {
 					found = true
 				}
-				provName, _ := i["provider_name"].(string)
-				Expect(provName).To(Equal(containerProviderName),
-					"combined filter should only return instances from the specified provider")
+				agentName, _ := i["agent_name"].(string)
+				Expect(agentName).To(Equal(containerAgentName),
+					"combined filter should only return instances from the specified agent")
 			}
 			Expect(found).To(BeTrue(),
 				"combined filter should include our instance")
@@ -381,7 +369,7 @@ var _ = Describe("Service Type Instances API", func() {
 		})
 
 		It("rejects or ignores special characters in service_type", func() {
-			for _, malicious := range []string{"../admin", "'; DROP TABLE--", "<script>", "container&provider=x"} {
+			for _, malicious := range []string{"../admin", "'; DROP TABLE--", "<script>", "container&agent_name=x"} {
 				encoded := url.QueryEscape(malicious)
 				resp, err := doRequest(http.MethodGet, "/service-type-instances?service_type="+encoded, "")
 				Expect(err).NotTo(HaveOccurred())
@@ -421,20 +409,11 @@ var _ = Describe("Service Type Instances API", func() {
 			}
 		})
 
-		It("returns empty for contradictory service_type and provider combination", func() {
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		It("returns empty for contradictory service_type and agent_name combination", func() {
+			containerAgent := discoverAgentByServiceType("container", "")
 
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, _ := provBody["providers"].([]interface{})
-			Expect(providers).NotTo(BeEmpty())
-
-			containerProvider, _ := providers[0].(map[string]interface{})["name"].(string)
-
-			resp, err = doRequest(http.MethodGet,
-				"/service-type-instances?service_type=vm&provider="+containerProvider, "")
+			resp, err := doRequest(http.MethodGet,
+				"/service-type-instances?service_type=vm&agent_name="+containerAgent, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -444,7 +423,7 @@ var _ = Describe("Service Type Instances API", func() {
 
 			instances, _ := body["instances"].([]interface{})
 			Expect(instances).To(BeEmpty(),
-				"contradictory service_type=vm with a container provider should yield empty results")
+				"contradictory service_type=vm with a container agent should yield empty results")
 		})
 
 		It("does not trim whitespace from service_type value", func() {

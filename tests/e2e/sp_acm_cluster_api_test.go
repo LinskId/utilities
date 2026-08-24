@@ -18,29 +18,35 @@ var _ = Describe("ACM Cluster SP API", Label("sp", "acm-cluster"), func() {
 
 	Context("registration", func() {
 
-		It("registers with DCM as a cluster provider", func() {
-			resp, err := doRequest(http.MethodGet, "/providers", "")
+		It("registers with DCM as a cluster agent", func() {
+			resp, err := doRequest(http.MethodGet, "/agents", "")
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
-			providers, ok := body["providers"].([]interface{})
-			Expect(ok).To(BeTrue(), "expected providers array in response")
+			agents, ok := body["agents"].([]interface{})
+			Expect(ok).To(BeTrue(), "expected agents array in response")
 
 			var found map[string]interface{}
-			for _, p := range providers {
-				pm, ok := p.(map[string]interface{})
+			for _, a := range agents {
+				am, ok := a.(map[string]interface{})
 				if !ok {
 					continue
 				}
-				if pm["service_type"] == "cluster" {
-					found = pm
+				serviceTypes, _ := am["service_types"].([]interface{})
+				for _, st := range serviceTypes {
+					if s, _ := st.(string); s == "cluster" {
+						found = am
+						break
+					}
+				}
+				if found != nil {
 					break
 				}
 			}
-			Expect(found).NotTo(BeNil(), "no provider with service_type=cluster found")
+			Expect(found).NotTo(BeNil(), "no agent with service_types containing 'cluster' found")
 			Expect(found).To(HaveKeyWithValue("name", "acm-cluster-sp"))
 		})
 	})

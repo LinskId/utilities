@@ -173,33 +173,40 @@ func newTestVMSpec(name string) VMSpec {
 	}
 }
 
-// getKubevirtProviderName discovers the KubeVirt provider name from DCM
+// getKubevirtProviderName discovers the KubeVirt agent name from DCM
 func getKubevirtProviderName() (string, error) {
-	resp, err := doRequest(http.MethodGet, "/providers?type=vm", "")
+	resp, err := doRequest(http.MethodGet, "/agents", "")
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get providers: status %d", resp.StatusCode)
+		return "", fmt.Errorf("failed to get agents: status %d", resp.StatusCode)
 	}
 
 	var body map[string]interface{}
 	decodeJSON(resp, &body)
 
-	providers, ok := body["providers"].([]interface{})
-	if !ok || len(providers) == 0 {
-		return "", fmt.Errorf("no vm providers registered")
+	agents, ok := body["agents"].([]interface{})
+	if !ok || len(agents) == 0 {
+		return "", fmt.Errorf("no agents registered")
 	}
 
-	p := providers[0].(map[string]interface{})
-	name, ok := p["name"].(string)
-	if !ok || name == "" {
-		return "", fmt.Errorf("provider name not found")
+	for _, a := range agents {
+		agent, _ := a.(map[string]interface{})
+		serviceTypes, _ := agent["service_types"].([]interface{})
+		for _, st := range serviceTypes {
+			if s, _ := st.(string); s == "vm" {
+				name, _ := agent["name"].(string)
+				if name != "" {
+					return name, nil
+				}
+			}
+		}
 	}
 
-	return name, nil
+	return "", fmt.Errorf("no agent with service_types containing 'vm' found")
 }
 
 // extractIDFromPath extracts the instance ID from a path like "/api/v1alpha1/vms/abc-123"

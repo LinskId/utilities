@@ -156,6 +156,64 @@ func waitForNewServiceTypeInstanceIDs(before map[string]struct{}, n int, timeout
 	return found
 }
 
+// discoverAgentByServiceType queries GET /agents (paging through the full
+// AgentList) and returns the name of the first agent whose service_types
+// list contains serviceType. An optional overrideName restricts the match
+// to that exact agent name.
+// Fails the current test if no matching agent is found.
+func discoverAgentByServiceType(serviceType, overrideName string) string {
+	token := ""
+	for {
+		path := "/agents?max_page_size=100"
+		if token != "" {
+			path += "&page_token=" + token
+		}
+		resp, err := doRequest(http.MethodGet, path, "")
+		Expect(err).NotTo(HaveOccurred())
+
+		body, err := func() (map[string]interface{}, error) {
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			data, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				return nil, readErr
+			}
+			var b map[string]interface{}
+			return b, json.Unmarshal(data, &b)
+		}()
+		Expect(err).NotTo(HaveOccurred())
+
+		agents, ok := body["agents"].([]interface{})
+		Expect(ok).To(BeTrue(), "expected agents array in response")
+
+		for _, raw := range agents {
+			agent, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _ := agent["name"].(string)
+			if overrideName != "" && name != overrideName {
+				continue
+			}
+			serviceTypes, _ := agent["service_types"].([]interface{})
+			for _, st := range serviceTypes {
+				if s, _ := st.(string); s == serviceType {
+					return name
+				}
+			}
+		}
+
+		next, _ := body["next_page_token"].(string)
+		if next == "" {
+			break
+		}
+		token = next
+	}
+
+	Fail(fmt.Sprintf("no agent with service_types containing %q found (override=%q)", serviceType, overrideName))
+	return ""
+}
+
 // legacyResourceIDsFromSpec returns spec.resource_ids when present (pre-#39 API).
 func legacyResourceIDsFromSpec(body map[string]interface{}) []string {
 	spec, ok := body["spec"].(map[string]interface{})
@@ -195,7 +253,14 @@ func resolveResourceIDAfterCreate(body map[string]interface{}, before map[string
 		"catalog-item-instance response missing run_id and spec.resource_ids")
 
 	ids := waitForNewServiceTypeInstanceIDs(before, 1, 60*time.Second)
-	Expect(ids).NotTo(BeEmpty())
+	// ids comes from a map iteration (see listServiceTypeInstanceIDs), so its
+	// order is not deterministic. Picking ids[0] is only safe when exactly one
+	// new STI appeared; if more than one shows up we have no reliable way to
+	// tell which one corresponds to this create call, so fail loudly instead
+	// of silently returning a random one (see PR #39 review discussion).
+	Expect(ids).To(HaveLen(1),
+		"expected exactly one new service-type-instance after create (run_id=%s), got %d: %v",
+		runID, len(ids), ids)
 	runResourceIDCache[runID] = ids[0]
 	return ids[0]
 }

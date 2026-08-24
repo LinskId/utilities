@@ -60,37 +60,13 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 			}
 		})
 
-		It("discovers the container provider", func() {
-			resp, err := doRequest(http.MethodGet, "/providers", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var body map[string]interface{}
-			decodeJSON(resp, &body)
-			Expect(body).To(HaveKey("providers"))
-
-			providers, ok := body["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-
-			override := os.Getenv("DCM_CONTAINER_PROVIDER_NAME")
-			for _, p := range providers {
-				provider, ok := p.(map[string]interface{})
-				Expect(ok).To(BeTrue(), "provider entry should be a map")
-				if st, _ := provider["service_type"].(string); st == "container" {
-					name, _ := provider["name"].(string)
-					if override != "" && name != override {
-						continue
-					}
-					containerProviderName = name
-					break
-				}
+		It("discovers the container agent", func() {
+			override := os.Getenv("DCM_CONTAINER_AGENT_NAME")
+			if override == "" {
+				override = os.Getenv("DCM_CONTAINER_PROVIDER_NAME")
 			}
-			if override != "" {
-				Expect(containerProviderName).NotTo(BeEmpty(), "provider %q not found in SPRM", override)
-			} else {
-				Expect(containerProviderName).NotTo(BeEmpty(), "no provider with service_type=container found")
-			}
-			GinkgoWriter.Printf("Selected container provider: %s\n", containerProviderName)
+			containerProviderName = discoverAgentByServiceType("container", override)
+			GinkgoWriter.Printf("Selected container agent: %s\n", containerProviderName)
 		})
 
 		It("verifies the container service type exists", func() {
@@ -160,8 +136,8 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, name, pkgName, containerProviderName)
 
 			resp, err := doRequest(http.MethodPost, "/policies", payload)
@@ -230,7 +206,7 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 				"service type instance should reach RUNNING status")
 		})
 
-		It("has correct provider assignment", func() {
+		It("has correct agent assignment", func() {
 			Expect(resourceID).NotTo(BeEmpty(), "instance must be provisioned first")
 
 			resp, err := doRequest(http.MethodGet, "/service-type-instances/"+resourceID, "")
@@ -240,7 +216,7 @@ var _ = Describe("Core Platform", Label("core", "platform"), func() {
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
 			Expect(body["status"]).To(Equal("RUNNING"), "instance should still be RUNNING during verification")
-			Expect(body["provider_name"]).To(Equal(containerProviderName))
+			Expect(body["agent_name"]).To(Equal(containerProviderName))
 		})
 	})
 })

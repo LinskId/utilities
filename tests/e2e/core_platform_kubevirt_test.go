@@ -48,51 +48,74 @@ var _ = Describe("Core Platform - KubeVirt Provider", Label("core", "platform", 
 			}
 		})
 
-		It("discovers the KubeVirt provider with registration fields [TC-01]", func() {
-			resp, err := doRequest(http.MethodGet, "/providers?type=vm", "")
+		It("discovers the KubeVirt agent with registration fields [TC-01]", func() {
+			resp, err := doRequest(http.MethodGet, "/agents", "")
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
-			Expect(body).To(HaveKey("providers"))
+			Expect(body).To(HaveKey("agents"))
 
-			providers, ok := body["providers"].([]interface{})
+			agents, ok := body["agents"].([]interface{})
 			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty(), "no vm providers registered")
+			Expect(agents).NotTo(BeEmpty(), "no agents registered")
 
 			var p map[string]interface{}
-			for _, raw := range providers {
+			for _, raw := range agents {
 				cand, ok := raw.(map[string]interface{})
 				if !ok {
 					continue
 				}
-				endpoint, _ := cand["endpoint"].(string)
 				name, _ := cand["name"].(string)
-				if strings.Contains(endpoint, "/api/v1alpha1/vms") ||
-					strings.Contains(strings.ToLower(name), "kubevirt") {
+				serviceTypes, _ := cand["service_types"].([]interface{})
+				hasVM := false
+				for _, st := range serviceTypes {
+					if s, _ := st.(string); s == "vm" {
+						hasVM = true
+						break
+					}
+				}
+				if hasVM && strings.Contains(strings.ToLower(name), "kubevirt") {
 					p = cand
 					break
 				}
 			}
-			Expect(p).NotTo(BeNil(), "no vm provider with /api/v1alpha1/vms endpoint (or kubevirt name)")
+			if p == nil {
+				for _, raw := range agents {
+					cand, ok := raw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					serviceTypes, _ := cand["service_types"].([]interface{})
+					for _, st := range serviceTypes {
+						if s, _ := st.(string); s == "vm" {
+							p = cand
+							break
+						}
+					}
+					if p != nil {
+						break
+					}
+				}
+			}
+			Expect(p).NotTo(BeNil(), "no agent with service_types containing 'vm' found")
 
 			kubevirtProviderName, _ = p["name"].(string)
 			Expect(kubevirtProviderName).NotTo(BeEmpty())
 
-			Expect(p["service_type"]).To(Equal("vm"))
-			Expect(p["schema_version"]).To(Equal("v1alpha1"))
-			endpoint, _ := p["endpoint"].(string)
-			Expect(endpoint).To(ContainSubstring("/api/v1alpha1/vms"))
-			ops, ok := p["operations"]
-			if !ok || ops == nil {
-				Skip("provider operations omitted by SPRM payload — ADR expects CREATE/DELETE/READ")
+			serviceTypes, _ := p["service_types"].([]interface{})
+			hasVM := false
+			for _, st := range serviceTypes {
+				if s, _ := st.(string); s == "vm" {
+					hasVM = true
+					break
+				}
 			}
-			opsNorm := normalizeProviderOperations(ops)
-			Expect(opsNorm).To(ContainElements("CREATE", "DELETE", "READ"))
+			Expect(hasVM).To(BeTrue(), "agent should have 'vm' in service_types")
 
-			GinkgoWriter.Printf("Using KubeVirt provider: %s endpoint=%s\n", kubevirtProviderName, endpoint)
+			GinkgoWriter.Printf("Using KubeVirt agent: %s\n", kubevirtProviderName)
 		})
 
 		It("verifies the vm service type exists", func() {
@@ -193,8 +216,8 @@ var _ = Describe("Core Platform - KubeVirt Provider", Label("core", "platform", 
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": %d,
-				"description": "E2E test: route to KubeVirt provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E test: route to KubeVirt agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, name, priority, pkgName, kubevirtProviderName)
 
 			resp, err := doRequest(http.MethodPost, "/policies", payload)
@@ -218,7 +241,7 @@ var _ = Describe("Core Platform - KubeVirt Provider", Label("core", "platform", 
 			Expect(got["priority"]).To(BeNumerically("==", priority))
 			rego, _ := got["rego_code"].(string)
 			Expect(rego).To(ContainSubstring(kubevirtProviderName))
-			Expect(rego).To(ContainSubstring("selected_provider"))
+			Expect(rego).To(ContainSubstring("selected_agent"))
 		})
 
 		It("creates a catalog item instance for VM [TC-23]", func() {
@@ -237,6 +260,7 @@ var _ = Describe("Core Platform - KubeVirt Provider", Label("core", "platform", 
 				}
 			}`, instanceDisplayName, catalogItemID, instanceDisplayName)
 
+			beforeSTIs := listServiceTypeInstanceIDs()
 			resp, err := doRequest(http.MethodPost, "/catalog-item-instances", payload)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
@@ -245,14 +269,10 @@ var _ = Describe("Core Platform - KubeVirt Provider", Label("core", "platform", 
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
 			instanceID, _ = body["uid"].(string)
+			Expect(instanceID).NotTo(BeEmpty())
 
-			spec, ok := body["spec"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			ids, ok := spec["resource_ids"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(ids).To(HaveLen(1))
-			resourceID, _ = ids[0].(string)
-			Expect(resourceID).NotTo(BeEmpty())
+			resourceID = resolveResourceIDAfterCreate(body, beforeSTIs)
+			Expect(resourceID).NotTo(BeEmpty(), "placement resource ID should be discoverable after create")
 		})
 
 		It("VM reaches Running status on STI and cluster [TC-23]", func() {
@@ -297,7 +317,7 @@ var _ = Describe("Core Platform - KubeVirt Provider", Label("core", "platform", 
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
 			Expect(body["status"]).To(Equal("Running"))
-			Expect(body["provider_name"]).To(Equal(kubevirtProviderName))
+			Expect(body["agent_name"]).To(Equal(kubevirtProviderName))
 		})
 
 		It("deletes catalog instance and removes VM [TC-24]", func() {

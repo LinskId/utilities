@@ -138,30 +138,37 @@ var (
 )
 
 func initThreeTierSP() {
-	resp, err := doRequest(http.MethodGet, "/providers", "")
+	resp, err := doRequest(http.MethodGet, "/agents", "")
 	if err != nil {
-		GinkgoWriter.Printf("Failed to list providers: %v — rehydration tests will be skipped\n", err)
+		GinkgoWriter.Printf("Failed to list agents: %v — rehydration tests will be skipped\n", err)
 		return
 	}
 
 	var body map[string]interface{}
 	decodeJSON(resp, &body)
 
-	providersList, ok := body["providers"].([]interface{})
+	agentsList, ok := body["agents"].([]interface{})
 	if !ok {
-		GinkgoWriter.Println("No providers found — rehydration tests will be skipped")
+		GinkgoWriter.Println("No agents found — rehydration tests will be skipped")
 		return
 	}
 
 	providersByRegion = make(map[string][]ThreeTierProvider)
 
-	for _, p := range providersList {
+	for _, p := range agentsList {
 		provider, _ := p.(map[string]interface{})
 		name, _ := provider["name"].(string)
 		health := stringField(provider, "health_status")
-		serviceType := stringField(provider, "service_type")
 
-		if serviceType != "three-tier-app-demo" && serviceType != "three_tier_app_demo" {
+		serviceTypes, _ := provider["service_types"].([]interface{})
+		serviceType := ""
+		for _, st := range serviceTypes {
+			if s, _ := st.(string); s == "three-tier-app-demo" || s == "three_tier_app_demo" {
+				serviceType = s
+				break
+			}
+		}
+		if serviceType == "" {
 			continue
 		}
 		if health != "ready" {
@@ -504,7 +511,7 @@ func deleteAllPolicies() {
 func regoSelectProvider(providerName string) string {
 	return fmt.Sprintf(`package placement
 import rego.v1
-main := {"selected_provider": "%s"} if { true }`, providerName)
+main := {"selected_agent": "%s"} if { true }`, providerName)
 }
 
 // --- Provider disruption --------------------------------------------------- //
@@ -538,22 +545,22 @@ func restartSPRM() {
 
 func waitForProviderHealth(providerName, expectedStatus string, timeout time.Duration) {
 	Eventually(func() string {
-		resp, err := doRequest(http.MethodGet, "/providers", "")
+		resp, err := doRequest(http.MethodGet, "/agents", "")
 		if err != nil {
 			return ""
 		}
 		var body map[string]interface{}
 		decodeJSON(resp, &body)
-		providers, _ := body["providers"].([]interface{})
-		for _, p := range providers {
-			provider, _ := p.(map[string]interface{})
-			if stringField(provider, "name") == providerName {
-				return stringField(provider, "health_status")
+		agents, _ := body["agents"].([]interface{})
+		for _, a := range agents {
+			agent, _ := a.(map[string]interface{})
+			if stringField(agent, "name") == providerName {
+				return stringField(agent, "health_status")
 			}
 		}
 		return ""
 	}).WithTimeout(timeout).WithPolling(pollInterval).Should(Equal(expectedStatus),
-		"provider %s did not reach health status %q", providerName, expectedStatus)
+		"agent %s did not reach health status %q", providerName, expectedStatus)
 }
 
 // --- Namespace-aware K8s assertions ---------------------------------------- //

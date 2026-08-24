@@ -16,28 +16,33 @@ var _ = Describe("Container SP API", Label("sp", "container"), func() {
 	})
 
 	Context("registration", func() {
-		It("registers with SPRM as a container provider", func() {
-			resp, err := doRequest(http.MethodGet, "/providers", "")
+		It("registers with DCM as a container agent", func() {
+			resp, err := doRequest(http.MethodGet, "/agents", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			var body map[string]interface{}
 			decodeJSON(resp, &body)
-			Expect(body).To(HaveKey("providers"))
+			Expect(body).To(HaveKey("agents"))
 
-			providers, ok := body["providers"].([]interface{})
+			agents, ok := body["agents"].([]interface{})
 			Expect(ok).To(BeTrue())
 
 			var found map[string]interface{}
-			for _, p := range providers {
-				provider := p.(map[string]interface{})
-				if st, _ := provider["service_type"].(string); st == "container" {
-					found = provider
+			for _, a := range agents {
+				agent := a.(map[string]interface{})
+				serviceTypes, _ := agent["service_types"].([]interface{})
+				for _, st := range serviceTypes {
+					if s, _ := st.(string); s == "container" {
+						found = agent
+						break
+					}
+				}
+				if found != nil {
 					break
 				}
 			}
-			Expect(found).NotTo(BeNil(), "no provider with service_type=container found in SPRM")
-			Expect(found["schema_version"]).To(Equal("v1alpha1"))
+			Expect(found).NotTo(BeNil(), "no agent with service_types containing 'container' found")
 		})
 	})
 

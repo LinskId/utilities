@@ -38,33 +38,21 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			By("discovering the container agent")
+			containerProviderName = discoverAgentByServiceType("container", "")
 
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty(), "no container providers registered")
-
-			p := providers[0].(map[string]interface{})
-			containerProviderName, _ = p["name"].(string)
-			Expect(containerProviderName).NotTo(BeEmpty())
-
-			By("creating a routing policy to direct traffic to the container provider")
+			By("creating a routing policy to direct traffic to the container agent")
 			polName := uniqueName("e2e-status-pol")
 			pkgName := fmt.Sprintf("e2e_status_%d", time.Now().UnixNano()%1000000)
 			polPayload := fmt.Sprintf(`{
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E status reader test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E status reader test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, containerProviderName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -256,17 +244,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider for policy creation")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent for policy creation")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-badimg-pol")
@@ -275,11 +254,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E bad image test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E bad image test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -425,17 +404,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-multi-pol")
@@ -444,11 +414,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E multi-instance test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E multi-instance test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -610,17 +580,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-fake-pol")
@@ -629,11 +590,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E fake ID test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E fake ID test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -795,17 +756,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-malform-pol")
@@ -814,11 +766,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E malformed msg test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E malformed msg test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -976,17 +928,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-stable-pol")
@@ -995,11 +938,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E stability test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E stability test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -1136,17 +1079,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-del-pol")
@@ -1155,11 +1089,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E deletion test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E deletion test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -1308,17 +1242,8 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 		BeforeAll(func() {
 			requireContainerSP()
 
-			By("discovering the container provider")
-			resp, err := doRequest(http.MethodGet, "/providers?type=container", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var provBody map[string]interface{}
-			decodeJSON(resp, &provBody)
-			providers, ok := provBody["providers"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(providers).NotTo(BeEmpty())
-			providerName, _ := providers[0].(map[string]interface{})["name"].(string)
+			By("discovering the container agent")
+			providerName := discoverAgentByServiceType("container", "")
 
 			By("creating a routing policy")
 			polName := uniqueName("e2e-edge-pol")
@@ -1327,11 +1252,11 @@ var _ = Describe("Status Reader", Label("nats"), func() {
 				"display_name": %q,
 				"policy_type": "GLOBAL",
 				"priority": 100,
-				"description": "E2E edge case test: route to container provider",
-				"rego_code": "package %s\n\nmain := {\"selected_provider\": \"%s\"}"
+				"description": "E2E edge case test: route to container agent",
+				"rego_code": "package %s\n\nmain := {\"selected_agent\": \"%s\"}"
 			}`, polName, pkgName, providerName)
 
-			resp, err = doRequest(http.MethodPost, "/policies", polPayload)
+			resp, err := doRequest(http.MethodPost, "/policies", polPayload)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
