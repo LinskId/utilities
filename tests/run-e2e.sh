@@ -42,12 +42,14 @@ Deploy passthrough flags (forwarded to deploy-dcm.sh):
 Service provider flags (forwarded to deploy-dcm.sh):
   --all-service-providers           Enable all SPs
   --k8s-container-service-provider  Enable the k8s container SP
+  --k8s-storage-service-provider    Enable the k8s storage SP
   --kubevirt-service-provider       Enable the kubevirt SP
   --acm-cluster-service-provider    Enable the ACM cluster SP
   --deploy-acm                      Deploy ACM on the cluster (opt-in, heavy)
   --deploy-mce                      Deploy MCE on the cluster (opt-in, heavy)
   --kubeconfig PATH                 Path to kubeconfig file
   --k8s-container-namespace NS      Namespace for container workloads
+  --k8s-storage-namespace NS        Namespace for storage PVCs
   --acm-cluster-namespace NS        Namespace for ACM clusters
   --kubevirt-vm-namespace NS        Namespace for kubevirt VMs
   --cluster-api URL                 OpenShift API URL for oc login
@@ -56,6 +58,7 @@ Service provider flags (forwarded to deploy-dcm.sh):
 
 Environment variables:
   DCM_CONTAINER_SP_URL     Container SP direct URL (default: http://localhost:8082/api/v1alpha1)
+  DCM_STORAGE_SP_URL       Storage SP direct URL (default: http://localhost:8089/api/v1alpha1)
   DCM_ACM_CLUSTER_SP_URL   ACM Cluster SP direct URL (default: http://localhost:8083/api/v1alpha1)
   DCM_KUBEVIRT_SP_URL      KubeVirt SP direct URL (default: http://localhost:8081/api/v1alpha1)
   DCM_NATS_URL             NATS URL for event tests (default: nats://localhost:4222)

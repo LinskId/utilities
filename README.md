@@ -44,7 +44,7 @@ Both deploy mode and `--running-versions` produce a `dcm-versions.json` mapping 
 
 - `git`, `podman`, `podman-compose`, `curl`, `jq`
 - `oc` (for KubeVirt/ACM providers; also used for `oc login` auth)
-- `oc` or `kubectl` (for k8s container provider — either works)
+- `oc` or `kubectl` (for k8s container and k8s storage providers — either works)
 - `oc` + `jq` (for `--deploy-acm` / `--deploy-mce`)
 
 ### Quick Start
@@ -62,17 +62,20 @@ Both deploy mode and `--running-versions` produce a `dcm-versions.json` mapping 
 # 4. Deploy with the k8s container service provider (auto-detects cluster)
 ./scripts/deploy-dcm.sh --k8s-container-service-provider
 
-# 5. Deploy with KubeVirt + explicit kubeconfig
+# 5. Deploy with the k8s storage service provider
+./scripts/deploy-dcm.sh --k8s-storage-service-provider --kubeconfig ~/.kube/config
+
+# 6. Deploy with KubeVirt + explicit kubeconfig
 ./scripts/deploy-dcm.sh --kubevirt-service-provider --kubeconfig ~/.kube/config
 
-# 6. Deploy all providers, logging in via oc
+# 7. Deploy all providers, logging in via oc
 ./scripts/deploy-dcm.sh --all-service-providers \
     --cluster-api https://api.cluster.example.com --cluster-password secret
 
-# 7. Deploy ACM cluster provider (install ACM first if needed)
+# 8. Deploy ACM cluster provider (install ACM first if needed)
 ./scripts/deploy-dcm.sh --acm-cluster-service-provider --deploy-acm --kubeconfig ~/.kube/config
 
-# 8. Tear down when done
+# 9. Tear down when done
 ./scripts/deploy-dcm.sh --tear-down
 ```
 
@@ -121,6 +124,7 @@ make help
 |----------|---------|-------------|
 | `DCM_GATEWAY_URL` | `http://localhost:8080/api/v1alpha1` | Control plane API base URL |
 | `DCM_CONTAINER_SP_URL` | `http://localhost:8082/api/v1alpha1` | Container SP direct URL (requires published port) |
+| `DCM_STORAGE_SP_URL` | `http://localhost:8089/api/v1alpha1` | Storage SP direct URL (requires published port) |
 | `DCM_ACM_CLUSTER_SP_URL` | `http://localhost:8083/api/v1alpha1` | ACM Cluster SP direct URL (requires published port) |
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS server URL for status event tests |
 | `DCM_CLI_PATH` | (auto-resolved) | Path to `dcm` CLI binary |
@@ -141,6 +145,7 @@ The test harness (`tests/run-e2e.sh`) supports additional flags for fine-grained
 
 # Service provider tests
 ./tests/run-e2e.sh --k8s-container-service-provider --cluster-api https://api.example.com:6443
+./tests/run-e2e.sh --k8s-storage-service-provider --kubeconfig ~/.kube/config
 ./tests/run-e2e.sh --skip-deploy --label-filter "sp && container"
 
 # ACM cluster SP tests

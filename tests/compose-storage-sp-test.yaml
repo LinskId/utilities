@@ -1,0 +1,8 @@
+# Compose override for E2E testing: publishes the storage SP port to the host.
+# Injected automatically by deploy-dcm.sh via the provider registry
+# (providers/k8s-storage.conf → COMPOSE_OVERRIDE).
+
+services:
+  k8s-storage-service-provider:
+    ports:
+      - "8089:8080"
