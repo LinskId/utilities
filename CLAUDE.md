@@ -178,6 +178,8 @@ All test targets support JUnit XML output: `make test-e2e JUNIT_REPORT=results.x
 | **Core platform tests** | Full provisioning flow through control plane | `core`, `platform` |
 | **API tests** | HTTP CRUD operations against the control plane | (none) |
 | **SP tests** | Container SP direct API + NATS status events | `sp`, `container` |
+| **Storage SP tests** | K8s storage SP direct API + NATS status events | `sp`, `storage` |
+| **Storage SP registration** | Env-agent registration placeholder (skipped without env) | `sp`, `storage`, `registration` |
 | **ACM SP tests** | ACM Cluster SP API (health, registration, validation, CRUD) | `sp`, `acm-cluster` |
 | **Cluster tests** | Tests requiring `kubectl`/`oc` cluster access | `cluster` |
 | **Disruptive tests** | Tests that stop/start infrastructure (e.g. NATS) | `disruptive` |
@@ -204,12 +206,18 @@ CLI tests are skipped (not failed) if no binary is available.
 - `DCM_GATEWAY_URL` env var overrides the control plane API endpoint (default: `http://localhost:8080/api/v1alpha1`)
 - `DCM_CONTAINER_SP_URL` env var overrides the container SP endpoint (default: `http://localhost:8082/api/v1alpha1`)
 - `DCM_STORAGE_SP_URL` env var overrides the storage SP endpoint (default: `http://localhost:8089/api/v1alpha1`)
+- `K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS` — **E2E harness only:** SP fallback when `provider_hints` omit `storage_class`; auto-detected by `deploy-dcm.sh`, written to `.dcm-e2e.env` (loaded by `make test-storage-sp`, `make test-sp`, and `run-e2e.sh` when storage tests run)
+- `K8S_STORAGE_SP_DEFAULT_ACCESS_MODE` — **E2E harness only:** SP fallback when hints omit `access_mode` (compose default `ReadWriteOnce`; not cluster-detected)
+- Catalog `provider_hints.kubernetes.storage_class` in storage E2E defaults to `standard` (simulated catalog hint for SP-direct tests; override with `E2E_CATALOG_STORAGE_CLASS`)
+- `K8S_STORAGE_SP_NAMESPACE` — PVC namespace for storage SP tests (from deploy `--k8s-storage-namespace`, default `default`)
+- `DCM_ENVIRONMENT_AGENT_URL` enables storage registration placeholder tests (`registration` label filter)
+- `K8S_STORAGE_SP_REGISTERED_ENDPOINT` overrides the expected registered volumes URL in registration tests (default: compose internal `http://k8s-storage-service-provider:8080/api/v1alpha1/volumes`)
 - `DCM_ACM_CLUSTER_SP_URL` env var overrides the ACM cluster SP endpoint (default: `http://localhost:8083/api/v1alpha1`)
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
 - `DCM_CLI_PATH` env var specifies the CLI binary path
 - `DCM_CONTAINER_PROVIDER_NAME` env var overrides which container provider to target in core platform tests (default: first `service_type=container` provider found)
-- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
-- SP tests skip gracefully if the container SP or ACM cluster SP isn't reachable (no hard failure)
+- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `storage`, `registration`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
+- SP tests skip gracefully if the container SP, storage SP, or ACM cluster SP isn't reachable (no hard failure); storage registration tests skip when `DCM_ENVIRONMENT_AGENT_URL` is unset
 - Cluster tests skip gracefully if `kubectl`/`oc` is unavailable or the cluster is unreachable
 - Disruptive tests skip if `podman` is unavailable; exclude from normal runs with `--label-filter '!disruptive'`
 

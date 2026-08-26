@@ -88,6 +88,34 @@ log()  { echo "==> $*"; }
 info() { echo "    $*"; }
 err()  { echo "ERROR: $*" >&2; }
 
+source_e2e_env_file() {
+    local env_file="${REPO_ROOT}/.dcm-e2e.env"
+    if [[ -f "${env_file}" ]]; then
+        set -a
+        # shellcheck source=/dev/null
+        . "${env_file}"
+        set +a
+        info "Loaded storage E2E environment from .dcm-e2e.env"
+    fi
+}
+
+# Load .dcm-e2e.env only when storage SP tests will run (not smoke/cli/acm/etc.).
+needs_storage_e2e_env() {
+    if [[ "${ENABLE_STORAGE_SP}" == "true" ]]; then
+        return 0
+    fi
+    if [[ -z "${LABEL_FILTER}" ]]; then
+        return 0
+    fi
+    if [[ "${LABEL_FILTER}" == *storage* ]]; then
+        return 0
+    fi
+    if [[ "${LABEL_FILTER}" == sp || "${LABEL_FILTER}" == sp* ]]; then
+        return 0
+    fi
+    return 1
+}
+
 # --- CLI binary resolution ------------------------------------------------- #
 
 download_dcm_cli() {
@@ -161,6 +189,7 @@ LABEL_FILTER=""
 JUNIT_REPORT=""
 DEPLOY_ARGS=()
 ENABLE_CONTAINER_SP=false
+ENABLE_STORAGE_SP=false
 ENABLE_ACM_CLUSTER_SP=false
 ENABLE_KUBEVIRT_SP=false
 KUBEVIRT_VM_NS_ARG=""
@@ -201,8 +230,13 @@ while [[ $# -gt 0 ]]; do
             ENABLE_CONTAINER_SP=true
             DEPLOY_ARGS+=("$1")
             shift ;;
+        --k8s-storage-service-provider)
+            ENABLE_STORAGE_SP=true
+            DEPLOY_ARGS+=("$1")
+            shift ;;
         --all-service-providers)
             ENABLE_CONTAINER_SP=true
+            ENABLE_STORAGE_SP=true
             ENABLE_ACM_CLUSTER_SP=true
             ENABLE_KUBEVIRT_SP=true
             DEPLOY_ARGS+=("$1")
@@ -218,7 +252,7 @@ while [[ $# -gt 0 ]]; do
         --deploy-acm|--deploy-mce)
             DEPLOY_ARGS+=("$1")
             shift ;;
-        --compose-file|--kubeconfig|--k8s-container-namespace|--acm-cluster-namespace|--cluster-api|--cluster-username|--cluster-password|--acm-cluster-sp-repo|--acm-cluster-sp-branch)
+        --compose-file|--kubeconfig|--k8s-container-namespace|--k8s-storage-namespace|--acm-cluster-namespace|--cluster-api|--cluster-username|--cluster-password|--acm-cluster-sp-repo|--acm-cluster-sp-branch)
             DEPLOY_ARGS+=("$1" "$2")
             shift 2 ;;
         --kubevirt-vm-namespace)
@@ -250,6 +284,10 @@ else
     log "Skipping deployment (--skip-deploy)"
 fi
 
+if needs_storage_e2e_env; then
+    source_e2e_env_file
+fi
+
 # Resolve CLI binary.
 if [[ "${SKIP_CLI}" == "false" ]]; then
     if resolve_dcm_cli; then
@@ -267,13 +305,17 @@ if [[ -n "${GATEWAY_URL}" ]]; then
 fi
 
 # Export SP URLs when providers are enabled.
-if [[ "${ENABLE_CONTAINER_SP}" == "true" ]] || [[ "${ENABLE_ACM_CLUSTER_SP}" == "true" ]]; then
+if [[ "${ENABLE_CONTAINER_SP}" == "true" ]] || [[ "${ENABLE_STORAGE_SP}" == "true" ]] || [[ "${ENABLE_ACM_CLUSTER_SP}" == "true" ]]; then
     export DCM_NATS_URL="${DCM_NATS_URL:-nats://localhost:4222}"
     info "DCM_NATS_URL=${DCM_NATS_URL}"
 fi
 if [[ "${ENABLE_CONTAINER_SP}" == "true" ]]; then
     export DCM_CONTAINER_SP_URL="${DCM_CONTAINER_SP_URL:-http://localhost:8082/api/v1alpha1}"
     info "DCM_CONTAINER_SP_URL=${DCM_CONTAINER_SP_URL}"
+fi
+if [[ "${ENABLE_STORAGE_SP}" == "true" ]]; then
+    export DCM_STORAGE_SP_URL="${DCM_STORAGE_SP_URL:-http://localhost:8089/api/v1alpha1}"
+    info "DCM_STORAGE_SP_URL=${DCM_STORAGE_SP_URL}"
 fi
 if [[ "${ENABLE_ACM_CLUSTER_SP}" == "true" ]]; then
     export DCM_ACM_CLUSTER_SP_URL="${DCM_ACM_CLUSTER_SP_URL:-http://localhost:8083/api/v1alpha1}"

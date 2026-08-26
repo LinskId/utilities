@@ -101,8 +101,10 @@ make e2e-up        # Deploy the stack
 make test-e2e      # Run all tests (stack must be running)
 make test-smoke    # Run health checks + CLI version only
 make test-cli      # Run CLI tests only
-make test-sp       # Run container SP tests (SP must be deployed)
-make test-acm-sp   # Run ACM cluster SP tests (ACM SP must be deployed)
+make test-sp          # Run all SP tests (SPs must be deployed)
+make test-storage-sp            # Storage SP API + NATS (default; excludes registration placeholder)
+make test-storage-sp-registration # Env-agent registration placeholder (needs DCM_ENVIRONMENT_AGENT_URL)
+make test-acm-sp      # Run ACM cluster SP tests (ACM SP must be deployed)
 make test-core     # Run core platform tests (full provisioning flow)
 make e2e-down      # Tear down
 make download-cli  # Download latest DCM CLI without running tests
@@ -127,8 +129,14 @@ make help
 | `DCM_STORAGE_SP_URL` | `http://localhost:8089/api/v1alpha1` | Storage SP direct URL (requires published port) |
 | `DCM_ACM_CLUSTER_SP_URL` | `http://localhost:8083/api/v1alpha1` | ACM Cluster SP direct URL (requires published port) |
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS server URL for status event tests |
+| `K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS` | (auto-detected at deploy) | **E2E harness only:** sets `SP_K8S_DEFAULT_STORAGE_CLASS` on the storage SP for requests that omit `provider_hints` (TC-2.1.6). Not used for catalog hints. Written to `.dcm-e2e.env` so `make test-storage-sp` sees the same SP config after deploy exits. |
+| `K8S_STORAGE_SP_DEFAULT_ACCESS_MODE` | `ReadWriteOnce` | **E2E harness only:** sets `SP_K8S_DEFAULT_ACCESS_MODE` when requests omit access_mode hints (compose default; not auto-detected). |
+| `E2E_CATALOG_STORAGE_CLASS` | `standard` | **Tests only:** optional override of simulated catalog `provider_hints.kubernetes.storage_class` in SP-direct E2E (default `standard`, common on kind). Deploy does not set this. |
+| `K8S_STORAGE_SP_NAMESPACE` | `default` | Namespace for storage PVCs (from deploy `--k8s-storage-namespace`) |
 | `DCM_CLI_PATH` | (auto-resolved) | Path to `dcm` CLI binary |
 | `JUNIT_REPORT` | (none) | JUnit XML report filename (e.g. `make test-e2e JUNIT_REPORT=results.xml`) |
+
+When the k8s storage SP is deployed for E2E, `deploy-dcm.sh` writes `.dcm-e2e.env` (gitignored) with the detected **SP default** storage class (no-hints path) and SP URLs. `make test-storage-sp`, `make test-storage-sp-registration`, and `make test-sp` source it; other targets do not. Catalog hint tests use `defaultCatalogStorageClass` (`standard`), not deploy env.
 
 ### Test Harness Flags
 
@@ -146,7 +154,8 @@ The test harness (`tests/run-e2e.sh`) supports additional flags for fine-grained
 # Service provider tests
 ./tests/run-e2e.sh --k8s-container-service-provider --cluster-api https://api.example.com:6443
 ./tests/run-e2e.sh --k8s-storage-service-provider --kubeconfig ~/.kube/config
-./tests/run-e2e.sh --skip-deploy --label-filter "sp && container"
+./tests/run-e2e.sh --skip-deploy --label-filter "storage && !registration"
+./tests/run-e2e.sh --skip-deploy --label-filter "storage && registration"   # requires DCM_ENVIRONMENT_AGENT_URL
 
 # ACM cluster SP tests
 ./tests/run-e2e.sh --acm-cluster-service-provider --kubeconfig ~/.kube/config

@@ -1,4 +1,4 @@
-.PHONY: help e2e-up test-e2e test-smoke test-cli test-sp test-acm-sp test-kubevirt-sp test-core test-rehydration test-rehydration-safe test-rehydration-cli e2e-down test-e2e-full download-cli cli-version lint
+.PHONY: help e2e-up test-e2e test-smoke test-cli test-sp test-storage-sp test-storage-sp-registration test-acm-sp test-kubevirt-sp test-core test-rehydration test-rehydration-safe test-rehydration-cli e2e-down test-e2e-full download-cli cli-version lint
 
 # Set JUNIT_REPORT to a filename to produce JUnit XML output.
 # Example: make test-e2e JUNIT_REPORT=results.xml
@@ -8,6 +8,9 @@ GINKGO_BASE = go run github.com/onsi/ginkgo/v2/ginkgo -r -v --tags=e2e
 ifdef JUNIT_REPORT
 GINKGO_BASE += --junit-report=$(JUNIT_REPORT)
 endif
+
+# Source storage SP deploy exports when present (storage E2E targets only).
+STORAGE_E2E_ENV_LOAD = set -a; [ -f .dcm-e2e.env ] && . ./.dcm-e2e.env; set +a;
 
 help: ## Show all available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -25,7 +28,13 @@ test-cli: ## Run CLI tests only (stack must be running)
 	cd tests/e2e && $(GINKGO_BASE) --label-filter=cli .
 
 test-sp: ## Run all service provider tests (SPs must be deployed with ports published)
-	cd tests/e2e && $(GINKGO_BASE) --label-filter=sp .
+	@$(STORAGE_E2E_ENV_LOAD) cd tests/e2e && $(GINKGO_BASE) --label-filter=sp .
+
+test-storage-sp: ## Run k8s storage SP API + NATS tests (excludes registration placeholder)
+	@$(STORAGE_E2E_ENV_LOAD) cd tests/e2e && $(GINKGO_BASE) --label-filter='storage && !registration' .
+
+test-storage-sp-registration: ## Run k8s storage SP env-agent registration placeholder only
+	@$(STORAGE_E2E_ENV_LOAD) cd tests/e2e && $(GINKGO_BASE) --label-filter='storage && registration' .
 
 test-acm-sp: ## Run ACM cluster SP tests only
 	cd tests/e2e && $(GINKGO_BASE) --label-filter=acm-cluster .

@@ -29,5 +29,6 @@ Thumbs.db
 # Env / secrets
 .env
 .env.*
+.dcm-e2e.env
 *.pem
 *.key
