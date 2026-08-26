@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Storage SP API", Label("sp", "storage"), func() {
+var _ = Describe("Storage SP API", Label("sp", "storage", "tier-a-only"), func() {
 	BeforeEach(func() {
 		requireStorageSP()
 	})

@@ -102,7 +102,8 @@ make test-e2e      # Run all tests (stack must be running)
 make test-smoke    # Run health checks + CLI version only
 make test-cli      # Run CLI tests only
 make test-sp          # Run all SP tests (SPs must be deployed)
-make test-storage-sp  # Run k8s storage SP tests only
+make test-storage-sp      # Direct SP API + NATS (tier A — no environment-agent)
+make test-storage-sp-tierb # Registration via environment-agent (tier B — needs DCM_ENVIRONMENT_AGENT_URL)
 make test-acm-sp      # Run ACM cluster SP tests (ACM SP must be deployed)
 make test-core     # Run core platform tests (full provisioning flow)
 make e2e-down      # Tear down
@@ -147,7 +148,8 @@ The test harness (`tests/run-e2e.sh`) supports additional flags for fine-grained
 # Service provider tests
 ./tests/run-e2e.sh --k8s-container-service-provider --cluster-api https://api.example.com:6443
 ./tests/run-e2e.sh --k8s-storage-service-provider --kubeconfig ~/.kube/config
-./tests/run-e2e.sh --skip-deploy --label-filter "sp && storage"
+./tests/run-e2e.sh --skip-deploy --label-filter "storage && !tier-b-only"
+./tests/run-e2e.sh --skip-deploy --label-filter "storage && tier-b-only"   # requires DCM_ENVIRONMENT_AGENT_URL
 
 # ACM cluster SP tests
 ./tests/run-e2e.sh --acm-cluster-service-provider --kubeconfig ~/.kube/config

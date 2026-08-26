@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Storage SP Status Events", Label("sp", "storage", "nats"), func() {
+var _ = Describe("Storage SP Status Events", Label("sp", "storage", "nats", "tier-a-only"), func() {
 	BeforeEach(func() {
 		requireStorageSP()
 	})

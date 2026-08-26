@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,16 +16,20 @@ import (
 )
 
 const (
-	defaultStorageSPURL   = "http://localhost:8089/api/v1alpha1"
-	natsStorageSubject    = "dcm.storage"
-	defaultTestCapacity   = "1Gi"
-	defaultTestStorageSC  = "standard"
+	defaultStorageSPURL              = "http://localhost:8089/api/v1alpha1"
+	defaultStorageRegisteredEndpoint = "http://k8s-storage-service-provider:8080/api/v1alpha1/volumes"
+	natsStorageSubject               = "dcm.storage"
+	defaultTestCapacity              = "1Gi"
+	defaultTestStorageSC             = "standard"
 )
 
 var (
-	storageSPBaseURL  string
-	storageSPReady    bool
-	storageSPNamespace string
+	storageSPBaseURL            string
+	storageSPReady              bool
+	storageSPNamespace          string
+	storageSPRegisteredEndpoint string
+	environmentAgentBaseURL     string
+	environmentAgentReady       bool
 )
 
 func initStorageSP() {
@@ -51,6 +56,39 @@ func initStorageSP() {
 	}
 	storageSPReady = true
 	GinkgoWriter.Printf("Storage SP ready at %s (namespace: %s)\n", storageSPBaseURL, storageSPNamespace)
+
+	storageSPRegisteredEndpoint = os.Getenv("K8S_STORAGE_SP_REGISTERED_ENDPOINT")
+	if storageSPRegisteredEndpoint == "" {
+		storageSPRegisteredEndpoint = defaultStorageRegisteredEndpoint
+	}
+}
+
+func initEnvironmentAgent() {
+	environmentAgentBaseURL = os.Getenv("DCM_ENVIRONMENT_AGENT_URL")
+	if environmentAgentBaseURL == "" {
+		GinkgoWriter.Println("DCM_ENVIRONMENT_AGENT_URL unset — tier-b storage registration tests will be skipped")
+		return
+	}
+	environmentAgentBaseURL = strings.TrimRight(environmentAgentBaseURL, "/")
+
+	resp, err := httpClient.Get(environmentAgentBaseURL + "/health")
+	if err != nil {
+		GinkgoWriter.Printf("Environment agent not reachable at %s: %v — tier-b storage tests will be skipped\n", environmentAgentBaseURL, err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		GinkgoWriter.Printf("Environment agent health returned %d — tier-b storage tests will be skipped\n", resp.StatusCode)
+		return
+	}
+	environmentAgentReady = true
+	GinkgoWriter.Printf("Environment agent ready at %s\n", environmentAgentBaseURL)
+}
+
+func requireEnvironmentAgent() {
+	if !environmentAgentReady {
+		Skip("Environment agent not available (set DCM_ENVIRONMENT_AGENT_URL and deploy environment-agent; follows osac-service-provider#38)")
+	}
 }
 
 func requireStorageSP() {
@@ -155,4 +193,72 @@ func applyStorageManifest(manifest string) error {
 		GinkgoWriter.Printf("kubectl apply failed: %s\n", string(out))
 	}
 	return err
+}
+
+// doEnvironmentAgentRequest sends a request to the environment agent API.
+func doEnvironmentAgentRequest(method, path string, body string) (*http.Response, error) {
+	url := environmentAgentBaseURL + path
+
+	var reqBody io.Reader
+	if body != "" {
+		reqBody = strings.NewReader(body)
+	}
+
+	req, err := http.NewRequest(method, url, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	return httpClient.Do(req)
+}
+
+// listEnvironmentAgentProviders returns all providers from the environment agent,
+// following pagination tokens until exhausted.
+func listEnvironmentAgentProviders() []map[string]interface{} {
+	var all []map[string]interface{}
+	token := ""
+
+	for {
+		path := "/providers"
+		if token != "" {
+			path += "?page_token=" + url.QueryEscape(token)
+		}
+
+		resp, err := doEnvironmentAgentRequest(http.MethodGet, path, "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		var body map[string]interface{}
+		decodeJSON(resp, &body)
+
+		providers, ok := body["providers"].([]interface{})
+		Expect(ok).To(BeTrue(), "providers list response missing providers array")
+
+		for _, p := range providers {
+			provider, ok := p.(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			all = append(all, provider)
+		}
+
+		next, _ := body["next_page_token"].(string)
+		if next == "" {
+			break
+		}
+		token = next
+	}
+
+	return all
+}
+
+func storageProvidersFromAgent() []map[string]interface{} {
+	var matched []map[string]interface{}
+	for _, p := range listEnvironmentAgentProviders() {
+		if st, _ := p["service_type"].(string); st == "storage" {
+			matched = append(matched, p)
+		}
+	}
+	return matched
 }

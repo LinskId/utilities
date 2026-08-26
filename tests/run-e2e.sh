@@ -58,7 +58,9 @@ Service provider flags (forwarded to deploy-dcm.sh):
 
 Environment variables:
   DCM_CONTAINER_SP_URL     Container SP direct URL (default: http://localhost:8082/api/v1alpha1)
-  DCM_STORAGE_SP_URL       Storage SP direct URL (default: http://localhost:8089/api/v1alpha1)
+  DCM_STORAGE_SP_URL              Storage SP direct URL (default: http://localhost:8089/api/v1alpha1)
+  DCM_ENVIRONMENT_AGENT_URL       Environment agent URL for tier-b registration tests (e.g. http://localhost:8090/api/v1alpha1)
+  K8S_STORAGE_SP_REGISTERED_ENDPOINT  Expected registered volumes endpoint (default: compose internal URL)
   DCM_ACM_CLUSTER_SP_URL   ACM Cluster SP direct URL (default: http://localhost:8083/api/v1alpha1)
   DCM_KUBEVIRT_SP_URL      KubeVirt SP direct URL (default: http://localhost:8081/api/v1alpha1)
   DCM_NATS_URL             NATS URL for event tests (default: nats://localhost:4222)
@@ -284,6 +286,9 @@ fi
 if [[ "${ENABLE_STORAGE_SP}" == "true" ]]; then
     export DCM_STORAGE_SP_URL="${DCM_STORAGE_SP_URL:-http://localhost:8089/api/v1alpha1}"
     info "DCM_STORAGE_SP_URL=${DCM_STORAGE_SP_URL}"
+fi
+if [[ -n "${DCM_ENVIRONMENT_AGENT_URL:-}" ]]; then
+    info "DCM_ENVIRONMENT_AGENT_URL=${DCM_ENVIRONMENT_AGENT_URL}"
 fi
 if [[ "${ENABLE_ACM_CLUSTER_SP}" == "true" ]]; then
     export DCM_ACM_CLUSTER_SP_URL="${DCM_ACM_CLUSTER_SP_URL:-http://localhost:8083/api/v1alpha1}"
