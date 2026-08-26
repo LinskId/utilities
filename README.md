@@ -101,8 +101,9 @@ make e2e-up        # Deploy the stack
 make test-e2e      # Run all tests (stack must be running)
 make test-smoke    # Run health checks + CLI version only
 make test-cli      # Run CLI tests only
-make test-sp       # Run container SP tests (SP must be deployed)
-make test-acm-sp   # Run ACM cluster SP tests (ACM SP must be deployed)
+make test-sp          # Run all SP tests (SPs must be deployed)
+make test-storage-sp  # Run k8s storage SP tests only
+make test-acm-sp      # Run ACM cluster SP tests (ACM SP must be deployed)
 make test-core     # Run core platform tests (full provisioning flow)
 make e2e-down      # Tear down
 make download-cli  # Download latest DCM CLI without running tests
@@ -146,7 +147,7 @@ The test harness (`tests/run-e2e.sh`) supports additional flags for fine-grained
 # Service provider tests
 ./tests/run-e2e.sh --k8s-container-service-provider --cluster-api https://api.example.com:6443
 ./tests/run-e2e.sh --k8s-storage-service-provider --kubeconfig ~/.kube/config
-./tests/run-e2e.sh --skip-deploy --label-filter "sp && container"
+./tests/run-e2e.sh --skip-deploy --label-filter "sp && storage"
 
 # ACM cluster SP tests
 ./tests/run-e2e.sh --acm-cluster-service-provider --kubeconfig ~/.kube/config

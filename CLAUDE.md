@@ -178,6 +178,7 @@ All test targets support JUnit XML output: `make test-e2e JUNIT_REPORT=results.x
 | **Core platform tests** | Full provisioning flow through control plane | `core`, `platform` |
 | **API tests** | HTTP CRUD operations against the control plane | (none) |
 | **SP tests** | Container SP direct API + NATS status events | `sp`, `container` |
+| **Storage SP tests** | K8s storage SP direct API + NATS status events | `sp`, `storage` |
 | **ACM SP tests** | ACM Cluster SP API (health, registration, validation, CRUD) | `sp`, `acm-cluster` |
 | **Cluster tests** | Tests requiring `kubectl`/`oc` cluster access | `cluster` |
 | **Disruptive tests** | Tests that stop/start infrastructure (e.g. NATS) | `disruptive` |
@@ -208,8 +209,8 @@ CLI tests are skipped (not failed) if no binary is available.
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
 - `DCM_CLI_PATH` env var specifies the CLI binary path
 - `DCM_CONTAINER_PROVIDER_NAME` env var overrides which container provider to target in core platform tests (default: first `service_type=container` provider found)
-- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
-- SP tests skip gracefully if the container SP or ACM cluster SP isn't reachable (no hard failure)
+- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `storage`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
+- SP tests skip gracefully if the container SP, storage SP, or ACM cluster SP isn't reachable (no hard failure)
 - Cluster tests skip gracefully if `kubectl`/`oc` is unavailable or the cluster is unreachable
 - Disruptive tests skip if `podman` is unavailable; exclude from normal runs with `--label-filter '!disruptive'`
 

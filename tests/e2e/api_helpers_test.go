@@ -56,6 +56,7 @@ var _ = BeforeSuite(func() {
 
 	// Probe service providers (tests skip gracefully if not deployed).
 	initContainerSP()
+	initStorageSP()
 	initAcmClusterSP()
 
 	// Resolve cluster CLI for tests that need kubectl/oc.
