@@ -51,6 +51,7 @@ var _ = BeforeSuite(func() {
 
 	// Probe service providers (tests skip gracefully if not deployed).
 	initContainerSP()
+	initEnvironmentAgent()
 	initAcmClusterSP()
 	initNetworkSP()
 

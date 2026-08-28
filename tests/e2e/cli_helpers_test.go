@@ -46,14 +46,15 @@ func requireCLI() {
 	}
 }
 
-// cliControlPlaneURL returns the control plane base URL without the /api/v1alpha1 suffix.
-func cliControlPlaneURL() string {
+// cliAPIGatewayURL returns the API base URL without the /api/v1alpha1 suffix.
+// The CLI appends /api/v1alpha1 itself from --api-gateway-url.
+func cliAPIGatewayURL() string {
 	return strings.TrimSuffix(gatewayBaseURL, "/api/v1alpha1")
 }
 
 // runDCM executes the DCM CLI binary with the given arguments and returns
 // stdout, stderr, and the exit code. It automatically injects
-// --control-plane-url and --config flags for test isolation.
+// --api-gateway-url and --config flags for test isolation.
 func runDCM(args ...string) (stdout string, stderr string, exitCode int) {
 	requireCLI()
 
@@ -61,7 +62,7 @@ func runDCM(args ...string) (stdout string, stderr string, exitCode int) {
 	// /dev/null won't work — Viper rejects it as unsupported config type.
 	configPath := filepath.Join(os.TempDir(), "dcm-e2e-nonexistent.yaml")
 	fullArgs := []string{
-		"--control-plane-url", cliControlPlaneURL(),
+		"--api-gateway-url", cliAPIGatewayURL(),
 		"--config", configPath,
 	}
 	fullArgs = append(fullArgs, args...)

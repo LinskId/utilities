@@ -41,7 +41,9 @@ if [[ -d "${OUT_FILE}" ]]; then
 	fi
 fi
 
-kubectl config view --minify --flatten --context "${KIND_CONTEXT}" \
+# --raw keeps client certificate/key data; without it Kind auth is stripped and
+# containers using this kubeconfig cannot reach the API server.
+kubectl config view --raw --minify --flatten --context "${KIND_CONTEXT}" \
 	| sed -E "s|https://[^:]+:[0-9]+|https://${ALIAS}:6443|" \
 	> "${OUT_FILE}"
 chmod 644 "${OUT_FILE}"
