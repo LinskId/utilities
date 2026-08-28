@@ -1,0 +1,39 @@
+# Compose override for E2E: environment-agent with embedded storage SP.
+# Injected by deploy-dcm.sh via providers/environment-agent.conf.
+#
+# Image must include embedded storage (environment-agent FLPATH-4803+). Until
+# merged to main, build locally:
+#   cd environment-agent && make image-build CONTAINER_IMAGE_TAG=main
+
+services:
+  environment-agent:
+    image: quay.io/dcm-project/environment-agent:${ENVIRONMENT_AGENT_VERSION:-main}
+    # Prefer a locally built image (required until embedded storage is on Quay main).
+    pull_policy: missing
+    ports:
+      - "8090:8080"
+    environment:
+      AGENT_SERVER_ADDRESS: ":8080"
+      AGENT_NAME: dcm-e2e-agent
+      AGENT_ENVIRONMENT: local
+      AGENT_COST: medium
+      AGENT_EMBEDDED_SPS: ${AGENT_EMBEDDED_SPS:-storage}
+      AGENT_KUBECONFIG: /kubeconfig
+      SP_K8S_NAMESPACE: ${K8S_STORAGE_SP_NAMESPACE:-default}
+      SP_K8S_DEFAULT_STORAGE_CLASS: ${K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS:-}
+      SP_K8S_DEFAULT_ACCESS_MODE: ${K8S_STORAGE_SP_DEFAULT_ACCESS_MODE:-ReadWriteOnce}
+      # Base URL only — agent client appends /api/v1alpha1/agents (unlike SPs, which use .../api/v1alpha1 + /providers).
+      DCM_REGISTRATION_URL: http://control-plane:8080
+      AGENT_MESSAGING_URL: nats://nats:4222
+      AGENT_SP_PERSISTENCE_PATH: /var/lib/environment-agent/registrations.json
+    volumes:
+      - ${AGENT_KUBECONFIG:-~/.kube/config}:/kubeconfig:ro,z
+      - environment_agent_data:/var/lib/environment-agent
+    depends_on:
+      control-plane:
+        condition: service_started
+      nats:
+        condition: service_started
+
+volumes:
+  environment_agent_data: {}

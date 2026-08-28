@@ -15,6 +15,7 @@ Files follow `{layer}_{subject}_test.go` with a matching `{layer}_helpers_test.g
 | `api_` | Control plane HTTP API (`doRequest` → `localhost:8080`) | `api_helpers_test.go` |
 | `cli_` | CLI binary (`runDCM` → `os/exec`) | `cli_helpers_test.go` |
 | `sp_container_` | Container SP direct API + NATS (`doContainerSPRequest` → `localhost:8082`) | `sp_helpers_test.go` |
+| `sp_storage_` | Storage SP direct API + NATS (`doStorageSPRequest` → `localhost:8089`) | `sp_storage_helpers_test.go` |
 | `sp_acm_cluster_` | ACM Cluster SP direct API (`doAcmClusterSPRequest` → `localhost:8083`) | `sp_acm_cluster_helpers_test.go` |
 | `core_` | Cross-service provisioning flow via control plane (`doRequest`) | `api_helpers_test.go`, `sp_helpers_test.go` |
 
@@ -23,9 +24,9 @@ When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. 
 ## Go Conventions
 - All files start with `//go:build e2e` and `package e2e_test`
 - Dot-import Ginkgo and Gomega: `. "github.com/onsi/ginkgo/v2"`
-- Use Ginkgo labels for selective runs: `Label("sp", "container")`, `Label("sp", "acm-cluster")`, `Label("core", "platform")`, `Label("cli")`, `Label("smoke")`, `Label("cluster")`, `Label("disruptive")`
+- Use Ginkgo labels for selective runs: `Label("sp", "container")`, `Label("sp", "storage")`, `Label("sp", "storage", "registration")`, `Label("sp", "acm-cluster")`, `Label("core", "platform")`, `Label("cli")`, `Label("smoke")`, `Label("cluster")`, `Label("disruptive")`, `Label("nats")`
 - Ordered contexts need `AfterAll` cleanup; standalone tests use `BeforeEach`/`AfterEach`
-- Tests that need optional infrastructure call `requireCLI()`, `requireContainerSP()`, `requireAcmClusterSP()`, `requireKubectl()`, or `requirePodman()` to skip gracefully
+- Tests that need optional infrastructure call `requireCLI()`, `requireContainerSP()`, `requireStorageSP()`, `requireEnvironmentAgent()`, `requireAcmClusterSP()`, `requireKubectl()`, or `requirePodman()` to skip gracefully
 - `BeforeSuite` in `api_helpers_test.go` is the single initialization point — add `init*()` calls there for new subsystems
 - Tests that modify infrastructure (e.g. stop NATS) use `Label("disruptive")` so they can be excluded from normal runs
 - Tests that require cluster access use `Label("cluster")` so they can be filtered when no cluster is available
@@ -39,10 +40,20 @@ When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. 
 |----------|---------|---------|
 | `DCM_GATEWAY_URL` | `http://localhost:8080/api/v1alpha1` | Control plane API |
 | `DCM_CONTAINER_SP_URL` | `http://localhost:8082/api/v1alpha1` | Container SP direct API |
+| `DCM_STORAGE_SP_URL` | `http://localhost:8089/api/v1alpha1` | Storage SP direct API |
 | `DCM_ACM_CLUSTER_SP_URL` | `http://localhost:8083/api/v1alpha1` | ACM Cluster SP direct API |
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS for status events |
 | `DCM_CLI_PATH` | (auto-resolved) | CLI binary path |
 | `DCM_CONTAINER_PROVIDER_NAME` | (first container provider) | Target a specific container provider in core platform tests |
+| `DCM_ENVIRONMENT_AGENT_URL` | (from `.dcm-e2e.env`) | Environment agent for embedded storage registration tests (`storage && registration`) |
+| `K8S_STORAGE_SP_NAMESPACE` | `default` | Namespace for storage SP PVCs |
+| `K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS` | (from `.dcm-e2e.env`) | E2E harness: SP fallback when requests omit `provider_hints` (`SP_K8S_DEFAULT_STORAGE_CLASS`) |
+| `E2E_CATALOG_STORAGE_CLASS` | `standard` | Optional override of simulated catalog hint `storage_class` in SP-direct E2E |
+| `K8S_STORAGE_SP_REGISTERED_ENDPOINT` | `embedded://storage` | Expected embedded storage provider endpoint in registration tests |
+
+Storage class sources in storage E2E (do not conflate):
+- **Catalog hints** (`provider_hints.kubernetes.storage_class`): `defaultCatalogStorageClass` constant (`standard`) via `catalogStorageClassHint()`; optional `E2E_CATALOG_STORAGE_CLASS` override
+- **SP default** (no hints, TC-2.1.6): from `K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS` via `spDefaultStorageClass()`; set by `deploy-dcm.sh` and `.dcm-e2e.env`
 
 ## Code Quality Patterns
 
@@ -103,4 +114,5 @@ When testing message ordering via NATS, comment whether the test relies on singl
 ## Compose Overrides
 SP compose overrides are managed by the provider registry (`providers/*.conf`). Each provider's `COMPOSE_OVERRIDE` key specifies its overlay file, which `deploy-dcm.sh` injects automatically when the provider is enabled:
 - `tests/compose-sp-test.yaml` — publishes container SP port 8082 (via `k8s-container.conf`)
+- `tests/compose-storage-sp-test.yaml` — publishes storage SP port 8089 (via `k8s-storage.conf`)
 - `tests/compose-acm-cluster-sp.yaml` — adds the ACM cluster SP service on port 8083 (via `acm-cluster.conf`)
