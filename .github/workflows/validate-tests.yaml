@@ -27,6 +27,10 @@ jobs:
       - name: Vet
         run: go vet --tags=e2e ./...
 
+      # Live environment-agent / embedded storage E2E is not executed here
+      # (needs a cluster and compose). This job compiles tests/e2e, including
+      # sp_storage_registration_test.go. Run make test-storage-sp-registration
+      # against a stack deployed with --environment-agent.
       - name: Compile check
         run: go test --tags=e2e -c -o /dev/null .
 

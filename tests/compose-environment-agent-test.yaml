@@ -1,0 +1,28 @@
+# Compose override for E2E: enable embedded storage on the upstream
+# environment-agent service (control-plane deploy/compose.yaml profile
+# "environment-agent"). Injected by deploy-dcm.sh via providers/environment-agent.conf.
+#
+# Do not re-define the whole service: upstream owns kubeconfig
+# (AGENT_KUBECONFIG_HOST + SP_DEFAULT_KUBECONFIG), persistence (/app/data),
+# and storage env (SP_STORAGE_NAMESPACE, SP_K8S_DEFAULT_*).
+# deploy-dcm.sh maps K8S_STORAGE_SP_* / AGENT_KUBECONFIG onto those names.
+
+services:
+  environment-agent:
+    image: quay.io/dcm-project/environment-agent:${ENVIRONMENT_AGENT_VERSION:-main}
+    # Pin with ENVIRONMENT_AGENT_VERSION (deploy --version or env). pull_policy
+    # missing keeps a locally built tag when Quay main lags embedded storage.
+    pull_policy: missing
+    ports:
+      # E2E / deploy-dcm.sh expect host 8090 (upstream default is AGENT_PORT=8081).
+      - "8090:8080"
+    environment:
+      AGENT_NAME: ${AGENT_NAME:-dcm-e2e-agent}
+      AGENT_ENVIRONMENT: ${AGENT_ENVIRONMENT:-local}
+      AGENT_COST: ${AGENT_COST:-medium}
+      AGENT_EMBEDDED_SPS: ${AGENT_EMBEDDED_SPS:-storage}
+      SP_STORAGE_NAMESPACE: ${SP_STORAGE_NAMESPACE:-default}
+      SP_K8S_DEFAULT_STORAGE_CLASS: ${SP_K8S_DEFAULT_STORAGE_CLASS:-}
+      SP_K8S_DEFAULT_ACCESS_MODE: ${SP_K8S_DEFAULT_ACCESS_MODE:-ReadWriteOnce}
+    volumes:
+      - ${AGENT_KUBECONFIG_HOST:-~/.kube/config}:/kubeconfig:ro,z

@@ -15,6 +15,7 @@ Files follow `{layer}_{subject}_test.go` with a matching `{layer}_helpers_test.g
 | `api_` | Control plane HTTP API (`doRequest` → `localhost:8080`) | `api_helpers_test.go` |
 | `cli_` | CLI binary (`runDCM` → `os/exec`) | `cli_helpers_test.go` |
 | `sp_container_` | Container SP direct API + NATS (`doContainerSPRequest` → `localhost:8082`) | `sp_helpers_test.go` |
+| `sp_storage_` | Embedded storage registration via environment-agent (`embedded://storage`) | `sp_storage_helpers_test.go` |
 | `sp_acm_cluster_` | ACM Cluster SP direct API (`doAcmClusterSPRequest` → `localhost:8083`) | `sp_acm_cluster_helpers_test.go` |
 | `core_` | Cross-service provisioning flow via control plane (`doRequest`) | `api_helpers_test.go`, `sp_helpers_test.go` |
 
@@ -23,9 +24,9 @@ When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. 
 ## Go Conventions
 - All files start with `//go:build e2e` and `package e2e_test`, **except** `tests/e2e/internal/*` packages (e.g. `internal/resolve`) — those hold pure, non-network logic extracted for real unit-test coverage (no build tag, no Ginkgo/Gomega, `go test ./internal/...` actually executes in CI). See `internal/resolve/resolve.go`'s package doc for the rationale.
 - Dot-import Ginkgo and Gomega: `. "github.com/onsi/ginkgo/v2"`
-- Use Ginkgo labels for selective runs: `Label("auth")`, `Label("sp", "container")`, `Label("sp", "acm-cluster")`, `Label("core", "platform")`, `Label("cli")`, `Label("smoke")`, `Label("cluster")`, `Label("disruptive")`
+- Use Ginkgo labels for selective runs: `Label("auth")`, `Label("sp", "container")`, `Label("sp", "storage")`, `Label("sp", "storage", "registration")`, `Label("sp", "acm-cluster")`, `Label("core", "platform")`, `Label("cli")`, `Label("smoke")`, `Label("cluster")`, `Label("disruptive")`, `Label("nats")`
 - Ordered contexts need `AfterAll` cleanup; standalone tests use `BeforeEach`/`AfterEach`
-- Tests that need optional infrastructure call `requireCLI()`, `requireContainerSP()`, `requireAcmClusterSP()`, `requireKubectl()`, or `requirePodman()` to skip gracefully
+- Tests that need optional infrastructure call `requireCLI()`, `requireContainerSP()`, `requireEnvironmentAgent()`, `requireAcmClusterSP()`, `requireKubectl()`, or `requirePodman()` to skip gracefully
 - `BeforeSuite` in `api_helpers_test.go` is the single initialization point — add `init*()` calls there for new subsystems
 - Tests that modify infrastructure (e.g. stop NATS) use `Label("disruptive")` so they can be excluded from normal runs
 - Tests that require cluster access use `Label("cluster")` so they can be filtered when no cluster is available
@@ -43,6 +44,9 @@ When adding a new service provider, add `sp_{provider}_{concern}_test.go` (e.g. 
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS for status events |
 | `DCM_CLI_PATH` | (auto-resolved) | CLI binary path |
 | `DCM_CONTAINER_PROVIDER_NAME` | (first container provider) | Target a specific container provider in core platform tests |
+| `DCM_ENVIRONMENT_AGENT_URL` | (from `.dcm-e2e.env`) | Environment agent for embedded storage registration tests (`storage && registration`) |
+| `K8S_STORAGE_SP_NAMESPACE` | `default` | Namespace mapped to embedded `SP_STORAGE_NAMESPACE` |
+| `K8S_STORAGE_SP_REGISTERED_ENDPOINT` | `embedded://storage` | Expected embedded storage provider endpoint in registration tests |
 | `DCM_AUTH_ENABLED` | `false` | Enable OIDC bearer authentication for API and CLI requests |
 | `DCM_AUTH_ISSUER_URL` | (discovered) | OIDC issuer URL override; the runner discovers it from the selected target |
 | `DCM_AUTH_CLIENT_ID` | `dcm-proxy` | OIDC client ID; set explicitly when the deployment uses another client |
@@ -117,4 +121,6 @@ When testing message ordering via NATS, comment whether the test relies on singl
 ## Compose Overrides
 SP compose overrides are managed by the provider registry (`providers/*.conf`). Each provider's `COMPOSE_OVERRIDE` key specifies its overlay file, which `deploy-dcm.sh` injects automatically when the provider is enabled:
 - `tests/compose-sp-test.yaml` — publishes container SP port 8082 (via `k8s-container.conf`)
+- `tests/compose-storage-sp-test.yaml` — publishes storage SP port 8089 (via `k8s-storage.conf`)
+- `tests/compose-environment-agent-test.yaml` — environment-agent with embedded storage on port 8090 (via `environment-agent.conf`)
 - `tests/compose-acm-cluster-sp.yaml` — adds the ACM cluster SP service on port 8083 (via `acm-cluster.conf`)
