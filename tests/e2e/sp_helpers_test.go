@@ -43,7 +43,7 @@ func initContainerSP() {
 		natsURL = defaultNATSURL
 	}
 
-	resp, err := httpClient.Get(containerSPBaseURL + "/containers/health")
+	resp, err := unauthenticatedClient.Get(containerSPBaseURL + "/containers/health")
 	if err != nil {
 		GinkgoWriter.Printf("Container SP not reachable at %s: %v — SP tests will be skipped\n", containerSPBaseURL, err)
 		return
@@ -80,7 +80,7 @@ func doContainerSPRequest(method, path string, body string) (*http.Response, err
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	return httpClient.Do(req)
+	return unauthenticatedClient.Do(req)
 }
 
 // expectRFC9457Problem asserts an RFC 9457 problem+json response (FLPATH-4720/4721)
@@ -277,7 +277,7 @@ func (c *NATSCollector) WaitForStatus(instanceID, status string, timeout time.Du
 			}
 		}
 		return false
-	}).WithTimeout(timeout).WithPolling(500 * time.Millisecond).Should(BeTrue(),
+	}).WithTimeout(timeout).WithPolling(500*time.Millisecond).Should(BeTrue(),
 		fmt.Sprintf("timed out waiting for status %q on instance %s", status, instanceID))
 	return matched
 }
@@ -348,7 +348,6 @@ func findDeploymentName(containerID string) string {
 		"no Deployment found with label %s", selector)
 	return name
 }
-
 
 // --- Podman helpers ------------------------------------------------------- //
 

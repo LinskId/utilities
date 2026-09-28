@@ -174,6 +174,14 @@ make help
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS server URL for status event tests |
 | `DCM_CLI_PATH` | (auto-resolved) | Path to `dcm` CLI binary |
 | `JUNIT_REPORT` | (none) | JUnit XML report filename (e.g. `make test-e2e JUNIT_REPORT=results.xml`) |
+| `DCM_AUTH_ENABLED` | `false` | Enable OIDC bearer authentication for API and CLI requests |
+| `DCM_AUTH_ISSUER_URL` | (none) | OIDC issuer URL; required when authentication is enabled |
+| `DCM_AUTH_CLIENT_ID` | `dcm-proxy` | OIDC client ID |
+| `DCM_AUTH_CLIENT_SECRET` | (none) | OIDC client secret for password-grant tokens |
+| `DCM_AUTH_USERNAME` | (none) | OIDC user for password-grant tokens |
+| `DCM_AUTH_PASSWORD` | (none) | OIDC password for password-grant tokens |
+| `DCM_AUTH_TOKEN` | (none) | Optional static bearer token; avoids the password grant |
+| `DCM_AUTH_CA_FILE` | (none) | Optional CA bundle for the OIDC issuer |
 
 ### Test Harness Flags
 
@@ -196,10 +204,33 @@ The test harness (`tests/run-e2e.sh`) supports additional flags for fine-grained
 # ./tests/run-e2e.sh --skip-deploy --label-filter "sp && network"
 ./tests/run-e2e.sh --skip-deploy --label-filter "sp && container"
 
+# Authentication-disabled mode (the default)
+./tests/run-e2e.sh --skip-deploy --skip-cli --label-filter smoke
+
+# Authentication-enabled mode against an already deployed RHBK/DCM stack
+DCM_AUTH_CLIENT_ID=dcm-proxy \
+DCM_AUTH_CLIENT_SECRET="$RHBK_CLIENT_SECRET" \
+DCM_AUTH_USERNAME=testuser1 \
+DCM_AUTH_PASSWORD="$RHBK_TEST_PASSWORD" \
+./tests/run-e2e.sh --skip-deploy --skip-cli \
+  --auth-issuer-url https://keycloak.example/realms/dcm
+
 # ACM cluster SP tests
 ./tests/run-e2e.sh --acm-cluster-service-provider --kubeconfig ~/.kube/config
 ./tests/run-e2e.sh --skip-deploy --label-filter "sp && acm-cluster"
 ```
+
+The same API and CLI tests run in both modes. Authentication-disabled mode is
+the default and sends requests without a bearer token. Authentication-enabled
+mode obtains a token from the configured OIDC issuer and uses it for API and
+CLI requests. The `auth` label contains authentication boundary checks; those
+checks are skipped when authentication is disabled. Keep credentials in the
+environment or CI secret store; do not commit them.
+
+Service-provider authentication coverage is separate from the shared suite.
+The existing provider tests remain available in authentication-disabled mode.
+Provider authentication depends on FLPATH-4622 and should be enabled in the
+authenticated run after that support is available.
 
 ### Unit Tests
 
