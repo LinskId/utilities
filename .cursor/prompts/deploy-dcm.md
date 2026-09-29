@@ -51,7 +51,7 @@ Deploy the full DCM stack for E2E testing using `scripts/deploy-dcm.sh`.
 
 ### Deploy with Authentication Enabled
 ```bash
-# Starts Keycloak (compose profile auth) and enables JWT validation
+# Loads deploy/compose.auth.yaml with the auth profile, starts Keycloak, and enables JWT validation
 ./scripts/deploy-dcm.sh --auth-enabled
 
 # Equivalent via environment (Jenkins uses this today)
@@ -146,7 +146,7 @@ After cloning control-plane, the script creates `deploy/.env` from `deploy/.env.
 
 ## What Happens
 
-1. Clones control-plane (`deploy/compose.yaml`)
+1. Clones control-plane and uses `deploy/compose.yaml`; auth mode also loads `deploy/compose.auth.yaml` with the `auth` profile
 2. Bootstraps `deploy/.env` with DB credentials (and auth credentials when `--auth-enabled`)
 3. Runs `podman-compose up -d`
 4. Verifies all containers are running

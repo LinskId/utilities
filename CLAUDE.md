@@ -26,11 +26,11 @@ CI runs ShellCheck on changed `*.sh` files via `.github/workflows/lint.yaml` (on
 
 ## Key Script: `scripts/deploy-dcm.sh`
 
-Deploys the full DCM stack for E2E testing by cloning control-plane (`deploy/compose.yaml`), running `podman-compose up`, and polling health endpoints until all services respond 2xx.
+Deploys the full DCM stack for E2E testing by cloning control-plane and running its selected Compose model. Auth mode also loads `deploy/compose.auth.yaml` with the `auth` profile. The script polls the control-plane health endpoint until it responds 2xx.
 
-**Flow:** clone control-plane → bootstrap `deploy/.env` → `podman-compose up -d` → verify containers running → poll `/api/v1alpha1/health` → collect container versions from Quay.io API → write `dcm-versions.json`.
+**Flow:** clone control-plane → bootstrap `deploy/.env` → run `podman-compose up -d` with the base Compose model and, when auth is enabled, `deploy/compose.auth.yaml` plus the `auth` profile → verify containers running → poll `/api/v1alpha1/health` → collect container versions from Quay.io API → write `dcm-versions.json`.
 
-**Compose credentials:** After clone, the script copies `deploy/.env.example` to `deploy/.env` when missing and upserts DB/auth keys (lab defaults unless overridden by shell env). Control-plane compose reads these via `env_file: .env`. Pass `--auth-enabled` or set `AUTH_DISABLED=false` to add the compose `auth` profile (Keycloak) and write auth credentials into `.env`.
+**Compose credentials:** After clone, the script copies `deploy/.env.example` to `deploy/.env` when missing and upserts DB/auth keys (lab defaults unless overridden by shell env). Control-plane compose reads these via `env_file: .env`. Pass `--auth-enabled` or set `AUTH_DISABLED=false` to load `deploy/compose.auth.yaml` with the Compose `auth` profile (Keycloak) and write auth credentials into `.env`. The default model does not include Keycloak.
 
 **Modes:** The script has three mutually exclusive modes:
 - **Deploy** (default): full clone + bring-up + health check. Pass `--cleanup-on-failure` to auto-teardown on error (default leaves partial state for debugging).
@@ -50,7 +50,7 @@ When a non-main version is specified, `--control-plane-branch` is auto-derived t
 
 **Cluster authentication:** When any provider is enabled, the script resolves cluster access in priority order: explicit `--kubeconfig`, existing `oc`/`kubectl` session, or `oc login` via `--cluster-api` + `--cluster-password`.
 
-**Control-plane authentication:** Pass `--auth-enabled` (or set `AUTH_DISABLED=false`) to start Keycloak and enable JWT validation. Use the same flag on `--tear-down` when tearing down an auth-enabled stack. The E2E suite currently supports unauthenticated test runs only.
+**Control-plane authentication:** Pass `--auth-enabled` (or set `AUTH_DISABLED=false`) to load the auth Compose override and profile, start Keycloak, and enable JWT validation. Use the same flag on `--tear-down` when tearing down an auth-enabled stack. The E2E suite currently supports unauthenticated test runs only.
 
 **Podman Compose networking:** The script uses `--in-pod false` by default so services run on the Compose bridge network and resolve service names through its DNS. Set `PODMAN_COMPOSE_IN_POD=true` only when pod-mode networking is required by the environment.
 **GitOps reconciliation:** Pass `--gitops` to add the separate published `dcm-gitops` reconciler container. It uses the same PostgreSQL database as control-plane and persists cloned repositories in the Compose `gitops_data` volume. Set `DCM_GITOPS_VERSION` to pin only that image, or use `--version` to pin all DCM images.

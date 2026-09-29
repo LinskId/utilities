@@ -58,7 +58,7 @@ Known P1 execution blockers today: [FLPATH-4622](https://redhat.atlassian.net/br
 - Ports 8080, 8180, 5432, 4222, 7007 free
 - Network access to `quay.io` for pulling container images
 
-> **CI note:** On Ecosystem Jenkins `flightpath-dcm-deploy`, the control-plane host port is remapped **8080 → 9080** to avoid conflicts (FLPATH-4421). Use `http://localhost:9080` for API calls in CI; local `make compose-up` still uses `8080`. Keycloak remains on host port `8180`.
+> **CI note:** On Ecosystem Jenkins `flightpath-dcm-deploy`, the control-plane host port is remapped **8080 → 9080** to avoid conflicts (FLPATH-4421). Use `http://localhost:9080` for API calls in CI; local `make compose-up` still uses `8080`. Keycloak is published on host port `8180` when auth mode is enabled.
 
 > **⚠️ API change ([control-plane#51](https://github.com/dcm-project/control-plane/pull/51)):** The `/providers` endpoint has been **removed** and replaced by `/agents`. All curl examples in this plan have been updated to use `/api/v1alpha1/catalog-items` (for simple auth verification) or `/api/v1alpha1/agents` (for CRUD operations). TC-08 and TC-34 use the agent API directly.
 
@@ -105,7 +105,7 @@ git checkout flpath-4432-implement-authentication
 make compose-up
 ```
 
-**Expected:** All services start and become healthy (Keycloak takes 30-60s to import the realm).
+**Expected:** The default Compose model starts and becomes healthy. Keycloak is not part of this model.
 
 ```bash
 podman compose -f deploy/compose.yaml ps
@@ -119,7 +119,20 @@ curl -s http://localhost:8080/api/v1alpha1/health | jq .
 
 **Expected:** `{"status":"ok","path":"/api/v1alpha1/health"}`
 
-**Step 4: Verify Keycloak OIDC discovery**
+### Helper: Switch to Config B (Auth Enabled)
+
+```bash
+AUTH=true make compose-down
+AUTH=true AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api make compose-up
+```
+
+**Expected:** The auth Compose model starts, including Keycloak. Keycloak takes 30-60s to import the realm.
+
+```bash
+podman compose -f deploy/compose.yaml -f deploy/compose.auth.yaml --profile auth ps
+```
+
+**Step 4: Verify Keycloak OIDC discovery (Config B)**
 
 ```bash
 curl -sf http://localhost:8180/realms/dcm/.well-known/openid-configuration | jq .issuer
@@ -127,19 +140,12 @@ curl -sf http://localhost:8180/realms/dcm/.well-known/openid-configuration | jq 
 
 **Expected:** `"http://keycloak:8080/realms/dcm"`
 
-> **Issuer alignment:** Keycloak uses `KC_HOSTNAME=http://keycloak:8080` with `KC_HOSTNAME_STRICT=false` (set in compose.yaml) to stamp `iss=http://keycloak:8080/realms/dcm` in all tokens - even when the token endpoint is accessed externally via `localhost:8180`. The control-plane's `AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm` matches this. If you see `iss=http://localhost:8180/realms/dcm` in tokens, verify `KC_HOSTNAME` (not `KC_HOSTNAME_URL`) is set in compose.yaml.
-
-### Helper: Switch to Config B (Auth Enabled)
-
-```bash
-make compose-down
-AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api make compose-up
-```
+> **Issuer alignment:** Keycloak uses `KC_HOSTNAME=http://keycloak:8080` with `KC_HOSTNAME_STRICT=false` (set in `deploy/compose.auth.yaml`) to stamp `iss=http://keycloak:8080/realms/dcm` in all tokens - even when the token endpoint is accessed externally via `localhost:8180`. The control-plane's `AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm` matches this. If you see `iss=http://localhost:8180/realms/dcm` in tokens, verify `KC_HOSTNAME` (not `KC_HOSTNAME_URL`) is set in `deploy/compose.auth.yaml`.
 
 ### Helper: Switch to Config C (Proxy-Only)
 
 ```bash
-make compose-down
+AUTH=true make compose-down
 AUTH_DISABLED=false make compose-up
 ```
 
@@ -259,7 +265,7 @@ When `DCM_ADMIN_SUBJECT` is set, the control-plane creates an admin actor and Ke
 
 #### Prerequisites
 
-- Config B running with fresh database (volumes removed by `make compose-down`)
+- Config B running with fresh database (volumes removed by `AUTH=true make compose-down`)
 
 #### Steps
 
@@ -586,7 +592,7 @@ No DELETE endpoint for agents (FK constraints preserve resource→agent history)
 PGPASSWORD=<POSTGRES_PASSWORD> psql -h localhost -U <POSTGRES_USER> -d control-plane -c "DELETE FROM agents WHERE name LIKE 'tc08-crud-%';"
 ```
 
-Alternatively, `make compose-down -v` destroys the Postgres volume and all data.
+Alternatively, `AUTH=true make compose-down` tears down the auth-enabled Compose model and destroys the Postgres volume and all data.
 
 ---
 
@@ -1241,8 +1247,8 @@ After the cache TTL expires, the next request re-queries the database. If the ac
 **Step 1: Restart with short cache TTL**
 
 ```bash
-make compose-down
-AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api AUTH_CACHE_TTL=5s make compose-up
+AUTH=true make compose-down
+AUTH=true AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api AUTH_CACHE_TTL=5s make compose-up
 ```
 
 **Step 2: Send first request to cache the actor**
@@ -1268,8 +1274,8 @@ curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $TOKEN" 
 Restart with default TTL:
 
 ```bash
-make compose-down
-AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api make compose-up
+AUTH=true make compose-down
+AUTH=true AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api make compose-up
 ```
 
 ---
@@ -1498,7 +1504,7 @@ EOF
 **Step 2: Start stack without admin subject**
 
 ```bash
-make compose-down
+AUTH=true make compose-down
 COMPOSE_PROJECT_NAME=control-plane podman compose -f deploy/compose.yaml -f /tmp/no-admin-override.yaml up -d
 ```
 
@@ -1526,8 +1532,8 @@ Remove override and restart with default settings:
 
 ```bash
 rm /tmp/no-admin-override.yaml
-make compose-down
-AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api make compose-up
+AUTH=true make compose-down
+AUTH=true AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm AUTH_JWT_AUDIENCE=dcm-api make compose-up
 ```
 
 ---
@@ -1580,7 +1586,7 @@ Remove all compose stack resources and verify clean shutdown.
 
 ```bash
 cd /root/dcm-control-plane
-make compose-down
+AUTH=true make compose-down
 ```
 
 **Expected:** All containers stopped, volumes removed.
@@ -2167,7 +2173,7 @@ Validates pipeline wiring: with `ENABLE_DCM_AUTH=true`, control-plane enforces a
 
 Confirm the job sets control-plane auth env (`AUTH_DISABLED=false`, `AUTH_ISSUER_URL`, `AUTH_JWT_AUDIENCE=dcm-api`). Smoke this TC with **curl against the control-plane** (unauth → 401; Bearer → 200).
 
-> **❗ Pipeline gap:** Ecosystem Jenkins `dcm_deploy.groovy` (upstream) still passes `--auth-enabled --keycloak-url …` into `tests/run-e2e.sh` when `ENABLE_DCM_AUTH=true`. Those flags are **not** defined on `run-e2e.sh` / `deploy-dcm.sh` today — auth is env-driven only. Enabling the E2E stage with that dead flag will fail; track a pipeline fix separately. This TC is deploy-env + curl smoke, not “E2E suite with `--auth-enabled`”.
+> **❗ Pipeline gap:** Ecosystem Jenkins `dcm_deploy.groovy` (upstream) still passes `--auth-enabled --keycloak-url …` into `tests/run-e2e.sh` when `ENABLE_DCM_AUTH=true`. `tests/run-e2e.sh` accepts neither flag; `scripts/deploy-dcm.sh` supports `--auth-enabled` but has no `--keycloak-url` option. Passing the flags to `run-e2e.sh` will fail; track a pipeline fix separately. This TC is deploy-env + curl smoke, not “E2E suite with `--auth-enabled`”.
 
 **Expected:** Unauthenticated API call → 401; authenticated Bearer → 200.
 
@@ -2238,7 +2244,7 @@ If any test case left resources behind, run the relevant cleanup:
 
 ```bash
 cd /root/dcm-control-plane
-make compose-down
+AUTH=true make compose-down
 ```
 
 This runs `podman compose down -v` which removes all containers and volumes.
@@ -2324,7 +2330,7 @@ Full-stack / client E2E gaps (Config B + providers / UI / CI):
 9. **CI control-plane host port is 9080**: Ecosystem Jenkins remaps 8080→9080. E2E and curl examples must use the correct host port or tests falsely fail.
 10. **FLPATH-4478 Closed without E2E suite**: Story closed when the test plan was published; utilities `tests/e2e/` still has no auth suite. TC-36–TC-42 track the remaining automation work in this plan.
 11. **SP auth not delivered ([FLPATH-4622](https://redhat.atlassian.net/browse/FLPATH-4622))**: Compose keeps `AUTH_DISABLED=true` for SP profiles until agent/SP authentication exists ([FLPATH-4196](https://redhat.atlassian.net/browse/FLPATH-4196) is obsolete). **TC-37/TC-38 are blocked**; Config B + current SP profiles will not register. TC-36 Step 2 shares that blocker; TC-36 Steps 1 and 3 do not.
-12. **Jenkins still passes dead `--auth-enabled` to E2E**: `dcm_deploy.groovy` (upstream) sets `AUTH_ARGS="--auth-enabled --keycloak-url …"` when `ENABLE_DCM_AUTH=true`, but `tests/run-e2e.sh` does not accept those flags. Deploy env wiring is real; the E2E invocation is not. Fix the pipeline separately from TC-41 curl smoke.
+12. **Jenkins passes unsupported auth flags to E2E**: `dcm_deploy.groovy` (upstream) sets `AUTH_ARGS="--auth-enabled --keycloak-url …"` when `ENABLE_DCM_AUTH=true`, but `tests/run-e2e.sh` accepts neither flag. `scripts/deploy-dcm.sh` supports `--auth-enabled`, but not `--keycloak-url`. Deploy env wiring is real; the E2E invocation is not. Fix the pipeline separately from TC-41 curl smoke.
 
 ---
 

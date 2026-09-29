@@ -156,7 +156,7 @@ EOF
   --cluster-username USER        Username for oc login (default: kubeadmin)
   --cluster-password PASS        Password for oc login
   --compose-file PATH            Additional compose file to merge (repeatable, e.g. port overrides)
-  --auth-enabled                 Enable authentication (Keycloak + JWT validation; adds compose profile auth)
+  --auth-enabled                 Enable authentication (loads auth Compose override and profile; starts Keycloak)
   --cleanup-on-failure           Tear down the stack automatically if deployment fails (default: leave for debugging)
   --running-versions             Print versions of all running containers and write dcm-versions.json
   --tear-down                    Stop the stack, remove volumes, and clean the deploy directory
@@ -927,6 +927,7 @@ if [[ "${RUNNING_VERSIONS}" == true || "${TEAR_DOWN}" == true ]] &&
 fi
 
 if [[ "${AUTH_ENABLED}" == true ]]; then
+    COMPOSE_EXTRA_FILE_ARGS+=("-f" "${CONTROL_PLANE_TMP_DIR}/deploy/compose.auth.yaml")
     COMPOSE_PROFILES+=("--profile" "auth")
 fi
 
