@@ -30,7 +30,7 @@ Deploys the full DCM stack for E2E testing by cloning control-plane and running 
 
 **Flow:** clone control-plane → bootstrap `deploy/.env` → run `podman-compose up -d` with the base Compose model and, when auth is enabled, `deploy/compose.auth.yaml` plus the `auth` profile → verify containers running → poll `/api/v1alpha1/health` → collect container versions from Quay.io API → write `dcm-versions.json`.
 
-**Compose credentials:** After clone, the script copies `deploy/.env.example` to `deploy/.env` when missing and upserts DB/auth keys (lab defaults unless overridden by shell env). Control-plane compose reads these via `env_file: .env`. Pass `--auth-enabled` or set `AUTH_DISABLED=false` to load `deploy/compose.auth.yaml` with the Compose `auth` profile (Keycloak) and write auth credentials into `.env`. The default model does not include Keycloak.
+**Compose credentials:** After clone, the script copies `deploy/.env.example` to `deploy/.env` when missing and upserts DB/auth keys (lab defaults unless overridden by shell env). Control-plane compose reads these via `env_file: .env`. Pass `--auth-enabled` or set `AUTH_DISABLED=false` to load `deploy/compose.auth.yaml`, add the compose `auth` profile (Keycloak), and write auth credentials into `.env`. The authentication overlay is loaded before user and provider compose overrides so later overrides retain precedence.
 
 **Modes:** The script has three mutually exclusive modes:
 - **Deploy** (default): full clone + bring-up + health check. Pass `--cleanup-on-failure` to auto-teardown on error (default leaves partial state for debugging).

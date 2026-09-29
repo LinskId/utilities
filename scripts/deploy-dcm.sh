@@ -927,7 +927,15 @@ if [[ "${RUNNING_VERSIONS}" == true || "${TEAR_DOWN}" == true ]] &&
 fi
 
 if [[ "${AUTH_ENABLED}" == true ]]; then
-    COMPOSE_EXTRA_FILE_ARGS+=("-f" "${CONTROL_PLANE_TMP_DIR}/deploy/compose.auth.yaml")
+    # Authentication services are defined in a separate compose file. The
+    # profile only selects services from files already loaded by Compose; it
+    # does not load compose.auth.yaml by itself.
+    # Put the built-in auth overlay first so user/provider overrides retain
+    # the documented precedence of later compose files.
+    COMPOSE_EXTRA_FILE_ARGS=(
+        "-f" "${CONTROL_PLANE_TMP_DIR}/deploy/compose.auth.yaml"
+        "${COMPOSE_EXTRA_FILE_ARGS[@]}"
+    )
     COMPOSE_PROFILES+=("--profile" "auth")
 fi
 
