@@ -2,7 +2,7 @@
 
 **Epic:** [FLPATH-3227](https://redhat.atlassian.net/browse/FLPATH-3227) — DCM network provider
 **QE Task:** [FLPATH-4865](https://redhat.atlassian.net/browse/FLPATH-4865) — TESTING: DCM Network provider
-**Status:** Updated (embedded agent)
+**Status:** Updated — embedded agent E2E coverage
 **Assignee:** Vlad Kolodny
 **SUT:** [dcm-project/environment-agent](https://github.com/dcm-project/environment-agent) — embedded `network` SP (`AGENT_EMBEDDED_SPS=network`)
 **Enhancement:** [k8s-network-sp.md](https://github.com/dcm-project/enhancements/blob/main/enhancements/k8s-network-sp/k8s-network-sp.md) ([PR #65](https://github.com/dcm-project/enhancements/pull/65))
@@ -29,14 +29,14 @@ This plan defines **automated utilities E2E** (Ginkgo) for the embedded network 
 control-plane + environment-agent deploy, agent registration, catalog, and thin
 happy-path checks against a real cluster (Kind or OCP) and DCM stack.
 
-**Execution mode:** Ginkgo tests in `tests/e2e/network_sp_api_test.go`, run via
+**Execution mode:** Ginkgo tests in `tests/e2e/sp_network_api_test.go`, run via
 `tests/run-e2e.sh` (see [Test implementation](#test-implementation)). Each E2E-*
 case below maps to one or more `It` blocks. Manual curl/kubectl steps are
 reference only for debugging — not the deliverable.
 
-> **Delivery note:** This PR may land the plan (and legacy deploy notes) before
-> `tests/e2e/network_sp_api_test.go` exists. Until that file lands (here or a
-> linked follow-up PR), treat Phase A/B as **planned**, not executed.
+> **Delivery note:** The automated suite is implemented in
+> `tests/e2e/sp_network_api_test.go`. Execution evidence is recorded in
+> [FLPATH-4865](https://redhat.atlassian.net/browse/FLPATH-4865).
 
 It does **not** duplicate unit/integration coverage owned by the environment-agent
 (and any leftover standalone SP repo plans). See [Test layer ownership](#test-layer-ownership).
@@ -72,7 +72,7 @@ another layer unless the row below says otherwise.
 |---------|----------------------------------|-----------------------------------|----------------------------|
 | Config / defaults | **Owner** — agent embedded network | — | — |
 | Request validation matrix | **Owner** | — | Smoke — E2E-08, E2E-11 |
-| Service type inference (all v1 paths) | **Owner** | Verify on cluster | **Owner** — E2E-04, E2E-06, E2E-09–E2E-11 |
+| Service type inference (all v1 paths) | **Owner** | Verify on cluster | **Owner** — E2E-04, E2E-06, E2E-09–E2E-13 |
 | Status mapping (PENDING/READY/DELETED) | **Owner** | Verify on cluster | — |
 | Handler error mapping (409, 404, etc.) | **Owner** | **Owner** — real K8s | — |
 | Registration / embedded enablement | Agent startup | Agent + CP | E2E-01, E2E-02 |
@@ -80,9 +80,9 @@ another layer unless the row below says otherwise.
 | CloudEvents + informer | **Owner** | **Owner** | — |
 | CP + agent deploy (Kind/compose) | — | — | **Owner** — E2E-01 |
 | Catalog `network` service type | — | — | **Owner** — E2E-03 |
-| CatalogItem → Instance → K8s Service | — | — | **Owner** — E2E-07 |
+| CatalogItem → Instance → K8s Service | — | — | **Owner** — E2E-04, E2E-09, E2E-10, E2E-12, E2E-13 |
 | LoadBalancer PENDING (no LB controller) | — | **Owner** | E2E-06 smoke (`no-lb-controller`) |
-| LoadBalancer READY (MetalLB / cloud LB) | — | **Owner** | — (`requires-metallb` or cloud) |
+| LoadBalancer READY (MetalLB / cloud LB) | — | **Owner** | E2E-12 (`requires-lb-controller`) |
 
 ### Upstream plans (source of truth for non-E2E)
 
@@ -162,20 +162,20 @@ If host 8080 is occupied, use compose override `9080:8080` and set
 
 ## Service type inference (reference)
 
-Status vocabulary (do not conflate):
+Network status vocabulary:
 
-| Layer | Field | Typical values | Owner of assertion |
-|-------|-------|----------------|--------------------|
-| **Control-plane** instance / STI | lifecycle status | `RUNNING`, … | E2E polls until `RUNNING` (same as `core_platform_test.go`) |
-| **Network SP** resource status | SP status | `READY`, `PENDING`, `DELETED` | Assert against **cluster class** below — not a free “either” |
+The Network E2E reads the Network SP status through the control-plane
+`/service-type-instances/{id}` endpoint. That endpoint persists the Network SP
+CloudEvent status in lowercase. Do not apply the container/VM `RUNNING`
+lifecycle expectation to Network resources.
 
-| `routing_level` | `node_ports` | K8s Service type | CP instance | Network SP status |
-|-----------------|--------------|------------------|-------------|-------------------|
-| omitted | No | ClusterIP | RUNNING | READY |
-| omitted | Yes | NodePort | RUNNING | READY |
-| `network` | No | LoadBalancer | RUNNING | `PENDING` if `no-lb-controller`; `READY` if MetalLB/cloud LB |
-| `network` | Yes | LoadBalancer | RUNNING | same as row above |
-| `application` | — | — | create fails | Error (Ingress not supported v1) |
+| `routing_level` | `node_ports` | K8s Service type | STI status through control-plane | Expected condition |
+|-----------------|--------------|------------------|----------------------------------|--------------------|
+| omitted | No | ClusterIP | `ready` | Service is usable |
+| omitted | Yes | NodePort | `ready` | Service is usable |
+| `network` | No | LoadBalancer | `pending` without an LB controller; `ready` with MetalLB/cloud LB | External address determines readiness |
+| `network` | Yes | LoadBalancer | same as row above | External address determines readiness |
+| `application` | — | — | `failed` | Ingress is not supported in v1 |
 
 PENDING is **not** a universal pass or fail — it depends on LB availability and
 provider/NATS wiring (see KB `facts/flightpath/dcm.md`).
@@ -198,7 +198,7 @@ Ginkgo labels (mirror container SP: `Label("sp", "container")`):
 #### E2E-01: Deploy stack with embedded network `lab-default`
 
 **Ginkgo:** `BeforeSuite` / deploy precondition + `Context("health")` in
-`network_sp_api_test.go`.
+`sp_network_api_test.go`.
 
 | Step | Action | Expected |
 |------|--------|----------|
@@ -224,7 +224,7 @@ Reference: `discoverAgentByServiceType("network", "")` in `api_helpers_test.go`.
 |------|--------|----------|
 | 1 | `GET /api/v1alpha1/service-types` | HTTP 200, `results` array |
 | 2 | Filter `results` for `service_type: network` | Entry found |
-| 3 | Inspect schema for that entry | `provider_hints.kubernetes` supports `selector`, `cluster_ip`, `node_ports` |
+| 3 | Inspect schema for that entry | Portable fields `ports`, `routing_level`, and `endpoints` are present. Kubernetes-specific provider hints are exercised through provisioning tests. |
 
 ### Phase 2 — Provisioning smoke (P0 — `crud` label)
 
@@ -238,18 +238,19 @@ direct `:8090` SP HTTP API. Covers each **v1 service-type inference** path once:
 | LoadBalancer (`routing_level: network`, no `node_ports`) | E2E-06 |
 | LoadBalancer + specified `node_ports` | E2E-10 |
 | `routing_level: application` (unsupported v1) | E2E-11 |
+| Headless ClusterIP (`cluster_ip: None`) | E2E-13 |
 
 #### E2E-04: Create and get ClusterIP `lab-default`, `crud`, `cluster`
 
-Provision via catalog item instance (same pattern as E2E-07) with ClusterIP-only
-spec (`metadata.name`: `e2e-clusterip-smoke`, port 80 → 8080).
+Provision via catalog item instance with no `routing_level`, `node_ports`, or
+`cluster_ip` (`metadata.name`: `e2e-clusterip-smoke`, port 80 → 8080).
 
 | Step | Action | Expected |
 |------|--------|----------|
 | 1 | Create catalog item + routing policy + instance | HTTP 201 |
-| 2 | Poll CP instance / STI until RUNNING (or timeout) | CP status `RUNNING` |
-| 3 | GET instance (and STI if exposed) | Spec matches create; network SP status `READY` |
-| 4 | `$CLUSTER_CLI get svc e2e-clusterip-smoke -n <ns>` | `TYPE=ClusterIP`, DCM labels |
+| 2 | Poll the service-type instance until ready (or timeout) | STI status `ready` |
+| 3 | GET service-type instance | Spec matches create; status `ready` |
+| 4 | `$CLUSTER_CLI get svc e2e-clusterip-smoke -n <ns>` | `TYPE=ClusterIP`, allocated (not `None`) ClusterIP, DCM labels |
 | 5 | Spec round-trip on instance / cluster object | `protocol: TCP`, `port: 80`, `target_port: 8080` |
 
 #### E2E-05: Delete smoke `lab-default`, `crud`, `cluster`
@@ -282,9 +283,9 @@ No `routing_level`; `provider_hints.kubernetes.node_ports` maps port name → No
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Provision via CP | HTTP 201; poll CP until `RUNNING` |
-| 2 | GET instance / STI | Spec includes `node_ports`; network SP status `READY` |
-| 3 | `$CLUSTER_CLI get svc e2e-nodeport-smoke -n <ns>` | `TYPE=NodePort`; `nodePort` 30080 |
+| 1 | Provision via CP | HTTP 201; poll service-type instance until `ready` |
+| 2 | GET service-type instance | Spec includes `node_ports`; status `ready` |
+| 3 | `$CLUSTER_CLI get svc e2e-nodeport-smoke -n <ns>` | `TYPE=NodePort`; `protocol: TCP`, `port: 80`, `targetPort: 8080`, `nodePort` 30080 |
 | 4 | Cleanup | Service + CP resources deleted |
 
 #### E2E-10: LoadBalancer with specified node_ports `lab-default`, `crud`, `cluster`
@@ -293,22 +294,32 @@ No `routing_level`; `provider_hints.kubernetes.node_ports` maps port name → No
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Provision via CP | HTTP 201; poll CP until `RUNNING` |
-| 2 | GET instance / STI | Spec includes `routing_level` + `node_ports` |
-| 3 | `$CLUSTER_CLI get svc … -o yaml` | `type: LoadBalancer`; `nodePort` as requested |
-| 4 | Network SP status | If labeled `no-lb-controller`: stay `PENDING` (~2 min). If MetalLB/cloud: poll until `READY`. Do **not** accept either on every cluster. |
+| 1 | Provision via CP | HTTP 201; poll service-type instance according to the controller mode |
+| 2 | GET service-type instance | Spec includes `routing_level` + `node_ports` |
+| 3 | `$CLUSTER_CLI get svc … -o yaml` | `type: LoadBalancer`; `protocol: TCP`, `port: 80`, `targetPort: 8080`, `nodePort` as requested |
+| 4 | Service-type instance status | If labeled `no-lb-controller`: stay `pending` (~2 min). If MetalLB/cloud: poll until `ready`. Do **not** accept either on every cluster. |
 | 5 | Cleanup | Service + CP resources deleted |
 
-#### E2E-11: `routing_level: application` returns error `lab-default`, `crud`, `contract`
+#### E2E-13: Headless ClusterIP `lab-default`, `crud`, `cluster`
+
+`cluster_ip: None` is explicitly supplied. This is separate from E2E-04 so
+the regular ClusterIP default and the headless behavior cannot mask each other.
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Attempt provision with `routing_level: application` | HTTP 4xx (typically 400) |
-| 2 | `Content-Type` | `application/problem+json` when error is HTTP-level |
-| 3 | Body | RFC 9457: `type`, `title`, `status` (when applicable) |
-| 4 | `$CLUSTER_CLI get svc …` | Service not created |
+| 1 | Provision with `cluster_ip: None` and no `routing_level` or `node_ports` | HTTP 201; poll until `READY` |
+| 2 | `$CLUSTER_CLI get svc` | `TYPE=ClusterIP`; `clusterIP: None`; DCM labels |
+| 3 | GET service-type instance | `agent_name` matches the selected agent; status `ready` |
 
-### Phase 3 — Lab-specific (P1)
+#### E2E-11: `routing_level: application` fails provisioning `lab-default`, `crud`, `contract`
+
+| Step | Action | Expected |
+|------|--------|----------|
+| 1 | Attempt provision with `routing_level: application` | Create may be accepted by the asynchronous CP API |
+| 2 | Poll service-type instance | Terminal `failed` status |
+| 3 | `$CLUSTER_CLI get svc …` | Service not created |
+
+### Phase 3 — LoadBalancer environment variants (P1)
 
 #### E2E-06: LoadBalancer stays PENDING without LB controller `no-lb-controller`, `crud`, `cluster`
 
@@ -316,37 +327,27 @@ No `routing_level`; `provider_hints.kubernetes.node_ports` maps port name → No
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Provision with `routing_level: "network"`, no `node_ports` | HTTP 201; CP may reach `RUNNING` |
+| 1 | Provision with `routing_level: "network"`, no `node_ports` | HTTP 201; service-type instance remains `pending` |
 | 2 | `$CLUSTER_CLI get svc` | `TYPE=LoadBalancer`, no external IP |
-| 3 | Poll **network SP** status ~2 min | Still `PENDING` (**pass** only on `no-lb-controller`) |
+| 3 | Poll service-type instance ~2 min | Still `pending` (**pass** only on `no-lb-controller`) |
 
-### Phase 4 — Full DCM flow (P1)
+#### E2E-12: Controller-backed LoadBalancer reaches READY `requires-lb-controller`, `crud`, `cluster`
 
-#### E2E-07: Provision via catalog instance `lab-default`, `crud`, `cluster`
+**Precondition:** A load-balancer controller is available. MetalLB is detected
+automatically; cloud environments must set `DCM_NETWORK_LB_MODE=cloud`.
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | `GET /api/v1alpha1/agents`; find agent with `network` | Agent name recorded |
-| 2 | `POST /api/v1alpha1/catalog-items` with `service_type: network` | HTTP 201 |
-| 3 | `POST /api/v1alpha1/policies` — GLOBAL Rego `selected_agent` → that agent | HTTP 201 |
-| 4 | `POST /api/v1alpha1/catalog-item-instances` | HTTP 201; `uid` / `run_id` |
-| 5 | Poll STI until CP `RUNNING` | CP status `RUNNING` |
-| 6 | `GET` instance | `agent_name` matches step 1; assert network SP status per cluster class |
-| 7 | `$CLUSTER_CLI get svc <metadata.name> -n <ns>` | Service exists with DCM labels |
+| 1 | Provision with `routing_level: "network"`, no `node_ports` | HTTP 201; poll until `READY` |
+| 2 | `$CLUSTER_CLI get svc` | `TYPE=LoadBalancer` with an external IP or hostname |
+| 3 | GET service-type instance | `agent_name` matches the selected agent; status `ready` |
 
-Example routing policy:
+### Full DCM flow coverage
 
-```json
-{
-  "display_name": "e2e-network-policy",
-  "policy_type": "GLOBAL",
-  "priority": 100,
-  "description": "E2E: route to network agent",
-  "rego_code": "package e2e_network\n\nmain := {\"selected_agent\": \"<agent-name-from-step-1>\"}"
-}
-```
-
-Reference: `core_platform_test.go` catalog / policy / instance flow.
+E2E-04, E2E-09, E2E-10, E2E-12, and E2E-13 each exercise the complete
+catalog item → routing policy → catalog-item instance → selected agent →
+Kubernetes Service flow. They assert the selected agent name and Kubernetes
+Service labels, so no duplicate E2E-07 case is needed.
 
 ### Phase 5 — API contract smoke (P2)
 
@@ -373,7 +374,8 @@ Do not add parallel TCs in utilities until monitoring stories close.
 
 ## Cleanup
 
-**Automated:** `AfterEach` / `AfterSuite` in `network_sp_api_test.go`.
+**Automated:** ordered-context `AfterAll` and per-test cleanup in
+`sp_network_api_test.go`.
 
 - Prefer a **dedicated test namespace** (e.g. `dcm-network-e2e`) or, if using
   `default`, a **unique run label** such as
@@ -391,13 +393,14 @@ Do not add parallel TCs in utilities until monitoring stories close.
 
 Phase A is a **wiring gate** only (deploy / register / catalog). It does **not**
 exercise network CREATE/DELETE. **FLPATH-4865 remains incomplete until Phase B
-(E2E-04–E2E-11) passes** (or is explicitly waived with linked follow-up).
+(E2E-04–E2E-13, with the environment-applicable LoadBalancer variant) passes**
+(or is explicitly waived with linked follow-up).
 
 | Level | Required tests | Notes |
 |-------|----------------|-------|
 | **Phase A (wiring)** | E2E-01–E2E-03 green | CP + agent deploy, agent registration, catalog — **not** sufficient alone for FLPATH-4865 |
-| **Phase B (CRUD + inference)** | E2E-04–E2E-11 green | Required for FLPATH-4865 complete; includes E2E-08/11 contract smokes |
-| **Deferred** | UI (FLPATH-4762), LB READY on cloud/MetalLB | Skip LB READY via `no-lb-controller`; auth → FLPATH-3254 |
+| **Phase B (CRUD + inference)** | E2E-04–E2E-11, E2E-13 green; E2E-06 or E2E-12 as applicable | Required for FLPATH-4865 complete; includes E2E-08/11 contract smokes |
+| **Deferred** | UI (FLPATH-4762); alternate LB environment | Run E2E-06 without an LB controller or E2E-12 with MetalLB/cloud LB; auth → FLPATH-3254 |
 
 ## Key configuration
 
@@ -411,12 +414,13 @@ exercise network CREATE/DELETE. **FLPATH-4865 remains incomplete until Phase B
 | `AGENT_KUBECONFIG_HOST` | `.kube/config` | Compose-friendly kubeconfig (`https://kubernetes:6443`) |
 | `DCM_GATEWAY_URL` | `http://localhost:8080/api/v1alpha1` | Ginkgo → control-plane |
 | `DCM_AGENT_URL` | `http://localhost:8081/api/v1alpha1` | Ginkgo → environment-agent (health/providers) |
+| `DCM_NETWORK_LB_MODE` | auto-detect MetalLB; `cloud` for a cloud LB | Select `none`, `metallb`, or `cloud` expectations |
 
 ## Test implementation (utilities)
 
 | Item | Path / action |
 |------|----------------|
-| **Test file** | `tests/e2e/network_sp_api_test.go` — `Describe("Network SP API", Label("sp", "network"), ...)` |
+| **Test file** | `tests/e2e/sp_network_api_test.go` — `Describe("Network SP API", Label("sp", "network"), ...)` |
 | **Helpers** | Extend `sp_helpers_test.go` / agent helpers: require agent with `network`, provision via CP APIs |
 | **Control-plane** | Reuse `doRequest`, `discoverAgentByServiceType("network", ...)`, `expectRFC9457Problem` |
 | **Cluster asserts** | Use `$CLUSTER_CLI` with the **same** namespace as agent `SP_K8S_NAMESPACE` (prefer `dcm-network-e2e`). Do **not** reuse bare `initKubectl()` — it reads `K8S_CONTAINER_SP_NAMESPACE` / `default` and will miss network Services. Pass ns explicitly or extend helpers for network. |
@@ -429,7 +433,7 @@ exercise network CREATE/DELETE. **FLPATH-4865 remains incomplete until Phase B
 | Phase | E2E IDs | Depends on |
 |-------|---------|------------|
 | **A** | E2E-01–03 | CP + environment-agent with `AGENT_EMBEDDED_SPS=network` |
-| **B** | E2E-04–11 | Embedded network CRUD via CP → agent |
+| **B** | E2E-04–13 | Embedded network CRUD via CP → agent |
 
 ## Dev implementation backlog (agent — not utilities)
 

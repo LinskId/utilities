@@ -97,8 +97,14 @@ func expectRFC9457Problem(resp *http.Response, want problemDetailExpectation) Pr
 	var problem ProblemDetail
 	decodeJSON(resp, &problem)
 
-	Expect(problem.Type).To(Equal(problemTypeBaseURI + want.TypeSuffix))
-	Expect(problem.Title).To(Equal(want.Title))
+	Expect(strings.TrimSpace(problem.Type)).NotTo(BeEmpty())
+	Expect(strings.TrimSpace(problem.Title)).NotTo(BeEmpty())
+	if want.TypeSuffix != "" {
+		Expect(problem.Type).To(Equal(problemTypeBaseURI + want.TypeSuffix))
+	}
+	if want.Title != "" {
+		Expect(problem.Title).To(Equal(want.Title))
+	}
 	Expect(problem.Status).To(Equal(want.Status))
 	if want.Detail != "" {
 		Expect(problem.Detail).To(Equal(want.Detail))
@@ -326,6 +332,16 @@ func requireKubectl() {
 func runKubectl(args ...string) (string, error) {
 	fullArgs := append([]string{"-n", spNamespace}, args...)
 	cmd := exec.Command(kubectlBin, fullArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		GinkgoWriter.Printf("kubectl %v failed: %s\n", args, string(out))
+	}
+	return string(out), err
+}
+
+// runKubectlAllNamespaces executes a cluster-wide kubectl/oc command.
+func runKubectlAllNamespaces(args ...string) (string, error) {
+	cmd := exec.Command(kubectlBin, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		GinkgoWriter.Printf("kubectl %v failed: %s\n", args, string(out))
