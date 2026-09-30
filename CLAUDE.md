@@ -238,11 +238,13 @@ CLI tests are skipped (not failed) if no binary is available.
 - `DCM_CONTAINER_SP_URL` env var overrides the container SP endpoint (default: `http://localhost:8082/api/v1alpha1`)
 - `DCM_STORAGE_SP_URL` env var overrides the storage SP endpoint (default: `http://localhost:8089/api/v1alpha1`)
 - `DCM_ACM_CLUSTER_SP_URL` env var overrides the ACM cluster SP endpoint (default: `http://localhost:8083/api/v1alpha1`)
+- `DCM_AGENT_URL` env var overrides the environment-agent endpoint (default: `http://localhost:8081/api/v1alpha1`)
+- `DCM_NETWORK_SP_ENABLED=true` requires the embedded Network SP. The suite waits up to 30 seconds for the agent and provider to become ready, then fails if they do not. When unset or `false`, Network SP specs skip immediately.
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
 - `DCM_CLI_PATH` env var specifies the CLI binary path
 - `DCM_CONTAINER_PROVIDER_NAME` env var overrides which container provider to target in core platform tests (default: first `service_type=container` provider found)
-- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
-- SP tests skip gracefully if the container SP or ACM cluster SP isn't reachable (no hard failure)
+- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `network`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
+- Container and ACM cluster SP tests skip gracefully if their SP is not reachable. Network SP tests skip only while `DCM_NETWORK_SP_ENABLED` is not enabled; an enabled Network SP is required to become ready.
 - Cluster tests skip gracefully if `kubectl`/`oc` is unavailable or the cluster is unreachable
 - Disruptive tests skip if `podman` is unavailable; exclude from normal runs with `--label-filter '!disruptive'`
 

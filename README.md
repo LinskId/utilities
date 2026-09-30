@@ -170,6 +170,7 @@ make help
 | `DCM_CONTAINER_SP_URL` | `http://localhost:8082/api/v1alpha1` | Container SP direct URL (requires published port) |
 | `DCM_STORAGE_SP_URL` | `http://localhost:8089/api/v1alpha1` | Storage SP direct URL (requires published port) |
 | `DCM_AGENT_URL` | `http://localhost:8081/api/v1alpha1` | Environment-agent API (embedded network via `AGENT_EMBEDDED_SPS=network`) |
+| `DCM_NETWORK_SP_ENABLED` | `false` | Require the embedded Network SP; when `false`, Network specs are skipped |
 | `DCM_ACM_CLUSTER_SP_URL` | `http://localhost:8083/api/v1alpha1` | ACM Cluster SP direct URL (requires published port) |
 | `DCM_NATS_URL` | `nats://localhost:4222` | NATS server URL for status event tests |
 | `DCM_CLI_PATH` | (auto-resolved) | Path to `dcm` CLI binary |
@@ -183,6 +184,13 @@ make help
 | `DCM_AUTH_PASSWORD` | (none) | OIDC password for password-grant tokens |
 | `DCM_AUTH_TOKEN` | (none) | Optional static bearer token; avoids the password grant |
 | `DCM_AUTH_CA_FILE` | (none) | Optional CA bundle for the OIDC issuer |
+
+Set `DCM_NETWORK_SP_ENABLED=true` only after starting the environment-agent
+profile with `AGENT_EMBEDDED_SPS=network` and publishing its API port. When
+enabled, Network specifications wait up to 30 seconds for a reachable agent at
+`DCM_AGENT_URL` and an embedded `network` provider with status `Ready`; they
+fail if it does not become ready. Otherwise, Network specifications skip
+immediately.
 
 The network NodePort tests select an unused port after listing Services across
 the cluster. The test identity needs permission to list Services in all

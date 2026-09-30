@@ -60,6 +60,8 @@ Service provider flags (forwarded to deploy-dcm.sh):
   --cluster-password PASS           Password for oc login
 
 Environment variables:
+  DCM_AGENT_URL            Environment-agent API URL (default: http://localhost:8081/api/v1alpha1)
+  DCM_NETWORK_SP_ENABLED   Require the embedded Network SP (default: false)
   DCM_CONTAINER_SP_URL     Container SP direct URL (default: http://localhost:8082/api/v1alpha1)
   DCM_STORAGE_SP_URL       Storage SP direct URL (default: http://localhost:8089/api/v1alpha1)
   DCM_ACM_CLUSTER_SP_URL   ACM Cluster SP direct URL (default: http://localhost:8083/api/v1alpha1)

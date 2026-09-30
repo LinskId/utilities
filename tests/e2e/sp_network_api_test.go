@@ -15,7 +15,23 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const defaultAgentURL = "http://localhost:8081/api/v1alpha1"
+const (
+	defaultAgentURL              = "http://localhost:8081/api/v1alpha1"
+	networkSPEnabledEnv          = "DCM_NETWORK_SP_ENABLED"
+	networkProviderServiceType   = "network"
+	networkProviderType          = "embedded"
+	networkProviderStatusReady   = "Ready"
+	networkResourceStatusReady   = "ready"
+	networkResourceStatusPending = "pending"
+	networkResourceStatusFailed  = "failed"
+	networkStatusUnavailable     = "unavailable"
+)
+
+var (
+	networkAgentBaseURL string
+	networkSPEnabled    bool
+	networkSPReady      bool
+)
 
 type networkAgentProvider struct {
 	ServiceType string `json:"service_type"`
@@ -41,6 +57,10 @@ var _ = Describe("Network SP API", Label("sp", "network"), func() {
 	var networkAgentName string
 
 	Context("Phase A wiring", Label("lab-default"), Ordered, func() {
+		BeforeAll(func() {
+			requireNetworkSP()
+		})
+
 		It("E2E-01 verifies control-plane and embedded agent health", func() {
 			assertControlPlaneHealth()
 			assertEmbeddedAgentHealth()
@@ -71,7 +91,10 @@ var _ = Describe("Network SP API", Label("sp", "network"), func() {
 		Context("ClusterIP inference", Label("clusterip"), Ordered, func() {
 			var resource networkCRUDResource
 			var deleted bool
-			BeforeAll(func() { requireKubectl() })
+			BeforeAll(func() {
+				requireNetworkSP()
+				requireKubectl()
+			})
 			AfterAll(func() {
 				if !deleted {
 					cleanupNetworkResource(resource)
@@ -86,7 +109,7 @@ var _ = Describe("Network SP API", Label("sp", "network"), func() {
 				provisionNetworkResource(&resource, agentName, opts)
 				waitForNetworkReady(resource.ResourceID)
 				assertNetworkService(resource, "ClusterIP", "", true, "")
-				assertNetworkInstance(resource, agentName, "ready")
+				assertNetworkInstance(resource, agentName, networkResourceStatusReady)
 			})
 			It("E2E-05 deletes the ClusterIP network and its Kubernetes Service", func() {
 				deleteNetworkResource(resource)
@@ -97,7 +120,10 @@ var _ = Describe("Network SP API", Label("sp", "network"), func() {
 		Context("NodePort inference", Label("nodeport"), Ordered, func() {
 			var resource networkCRUDResource
 			var deleted bool
-			BeforeAll(func() { requireKubectl() })
+			BeforeAll(func() {
+				requireNetworkSP()
+				requireKubectl()
+			})
 			AfterAll(func() {
 				if !deleted {
 					cleanupNetworkResource(resource)
@@ -112,7 +138,7 @@ var _ = Describe("Network SP API", Label("sp", "network"), func() {
 				provisionNetworkResource(&resource, agentName, opts)
 				waitForNetworkReady(resource.ResourceID)
 				assertNetworkService(resource, "NodePort", "", false, "http")
-				assertNetworkInstance(resource, agentName, "ready")
+				assertNetworkInstance(resource, agentName, networkResourceStatusReady)
 			})
 			It("deletes the NodePort network and its Kubernetes Service", func() {
 				deleteNetworkResource(resource)
@@ -120,96 +146,102 @@ var _ = Describe("Network SP API", Label("sp", "network"), func() {
 			})
 		})
 
-		It("E2E-06 creates a LoadBalancer network without node ports", Label("no-lb-controller"), func() {
-			requireKubectl()
-			requireLoadBalancerMode("none")
-			agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
-			opts := networkSpecOptions{
-				namePrefix: "e2e-network-loadbalancer", routingLevel: "network", selectorKey: "app", selectorVal: "e2e-network",
-			}
-			resource := newNetworkResource(opts)
-			DeferCleanup(func() { cleanupNetworkResource(resource) })
-			provisionNetworkResource(&resource, agentName, opts)
-			waitForNetworkPending(resource.ResourceID, resource.ServiceName, 2*time.Minute)
-			assertNetworkService(resource, "LoadBalancer", "", false, "")
-			assertNetworkServiceHasNoExternalIP(resource)
-			assertNetworkInstance(resource, agentName, "pending")
-		})
+		Context("Independent network operations", func() {
+			BeforeEach(func() {
+				requireNetworkSP()
+			})
 
-		It("E2E-12 creates a controller-backed LoadBalancer network", Label("requires-lb-controller"), func() {
-			requireKubectl()
-			requireLoadBalancerController()
-			agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
-			opts := networkSpecOptions{
-				namePrefix: "e2e-network-metallb", routingLevel: "network", selectorKey: "app", selectorVal: "e2e-network",
-			}
-			resource := newNetworkResource(opts)
-			DeferCleanup(func() { cleanupNetworkResource(resource) })
-			provisionNetworkResource(&resource, agentName, opts)
-			waitForNetworkReady(resource.ResourceID)
-			assertNetworkService(resource, "LoadBalancer", "", false, "")
-			assertNetworkServiceHasExternalIP(resource)
-			assertNetworkInstance(resource, agentName, "ready")
-		})
-
-		It("E2E-10 creates a LoadBalancer network with a node port", Label("loadbalancer"), func() {
-			requireKubectl()
-			agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
-			opts := networkSpecOptions{
-				namePrefix: "e2e-network-loadbalancer-np", routingLevel: "network", nodePort: findUnusedNodePort(), selectorKey: "app", selectorVal: "e2e-network",
-			}
-			resource := newNetworkResource(opts)
-			DeferCleanup(func() { cleanupNetworkResource(resource) })
-			provisionNetworkResource(&resource, agentName, opts)
-			mode := loadBalancerMode()
-			if mode == "unavailable" {
-				Skip("load-balancer capability could not be determined")
-			}
-			if mode != "none" {
-				waitForNetworkReady(resource.ResourceID)
-			} else {
+			It("E2E-06 creates a LoadBalancer network without node ports", Label("no-lb-controller"), func() {
+				requireKubectl()
+				requireLoadBalancerMode("none")
+				agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
+				opts := networkSpecOptions{
+					namePrefix: "e2e-network-loadbalancer", routingLevel: "network", selectorKey: "app", selectorVal: "e2e-network",
+				}
+				resource := newNetworkResource(opts)
+				DeferCleanup(func() { cleanupNetworkResource(resource) })
+				provisionNetworkResource(&resource, agentName, opts)
 				waitForNetworkPending(resource.ResourceID, resource.ServiceName, 2*time.Minute)
-			}
-			assertNetworkService(resource, "LoadBalancer", "", false, "http")
-			if mode != "none" {
+				assertNetworkService(resource, "LoadBalancer", "", false, "")
+				assertNetworkServiceHasNoExternalIP(resource)
+				assertNetworkInstance(resource, agentName, networkResourceStatusPending)
+			})
+
+			It("E2E-12 creates a controller-backed LoadBalancer network", Label("requires-lb-controller"), func() {
+				requireKubectl()
+				requireLoadBalancerController()
+				agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
+				opts := networkSpecOptions{
+					namePrefix: "e2e-network-metallb", routingLevel: "network", selectorKey: "app", selectorVal: "e2e-network",
+				}
+				resource := newNetworkResource(opts)
+				DeferCleanup(func() { cleanupNetworkResource(resource) })
+				provisionNetworkResource(&resource, agentName, opts)
+				waitForNetworkReady(resource.ResourceID)
+				assertNetworkService(resource, "LoadBalancer", "", false, "")
 				assertNetworkServiceHasExternalIP(resource)
-				assertNetworkInstance(resource, agentName, "ready")
-			} else {
-				assertNetworkInstance(resource, agentName, "pending")
-			}
-		})
+				assertNetworkInstance(resource, agentName, networkResourceStatusReady)
+			})
 
-		It("E2E-13 creates a headless ClusterIP network", Label("headless"), func() {
-			agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
-			opts := networkSpecOptions{
-				namePrefix: "e2e-network-headless", clusterIP: "None", selectorKey: "app", selectorVal: "e2e-network",
-			}
-			resource := newNetworkResource(opts)
-			DeferCleanup(func() { cleanupNetworkResource(resource) })
-			provisionNetworkResource(&resource, agentName, opts)
-			waitForNetworkReady(resource.ResourceID)
-			assertNetworkService(resource, "ClusterIP", "None", false, "")
-			assertNetworkInstance(resource, agentName, "ready")
-		})
+			It("E2E-10 creates a LoadBalancer network with a node port", Label("loadbalancer"), func() {
+				requireKubectl()
+				agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
+				opts := networkSpecOptions{
+					namePrefix: "e2e-network-loadbalancer-np", routingLevel: "network", nodePort: findUnusedNodePort(), selectorKey: "app", selectorVal: "e2e-network",
+				}
+				resource := newNetworkResource(opts)
+				DeferCleanup(func() { cleanupNetworkResource(resource) })
+				provisionNetworkResource(&resource, agentName, opts)
+				mode := loadBalancerMode()
+				if mode == networkStatusUnavailable {
+					Fail("load-balancer capability could not be determined; set DCM_NETWORK_LB_MODE explicitly")
+				}
+				if mode != "none" {
+					waitForNetworkReady(resource.ResourceID)
+				} else {
+					waitForNetworkPending(resource.ResourceID, resource.ServiceName, 2*time.Minute)
+				}
+				assertNetworkService(resource, "LoadBalancer", "", false, "http")
+				if mode != "none" {
+					assertNetworkServiceHasExternalIP(resource)
+					assertNetworkInstance(resource, agentName, networkResourceStatusReady)
+				} else {
+					assertNetworkInstance(resource, agentName, networkResourceStatusPending)
+				}
+			})
 
-		It("E2E-11 rejects application routing and does not create a Service", Label("contract", "unsupported"), func() {
-			agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
-			opts := networkSpecOptions{
-				namePrefix: "e2e-network-unsupported", routingLevel: "application", selectorKey: "app", selectorVal: "e2e-network",
-			}
-			resource := newNetworkResource(opts)
-			DeferCleanup(func() { cleanupNetworkResource(resource) })
-			provisionNetworkResource(&resource, agentName, opts)
-			waitForNetworkFailed(resource.ResourceID)
-			assertNetworkServiceAbsent(resource)
-		})
+			It("E2E-13 creates a headless ClusterIP network", Label("headless"), func() {
+				agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
+				opts := networkSpecOptions{
+					namePrefix: "e2e-network-headless", clusterIP: "None", selectorKey: "app", selectorVal: "e2e-network",
+				}
+				resource := newNetworkResource(opts)
+				DeferCleanup(func() { cleanupNetworkResource(resource) })
+				provisionNetworkResource(&resource, agentName, opts)
+				waitForNetworkReady(resource.ResourceID)
+				assertNetworkService(resource, "ClusterIP", "None", false, "")
+				assertNetworkInstance(resource, agentName, networkResourceStatusReady)
+			})
 
-		It("E2E-08 rejects an incomplete catalog-item instance request", Label("contract"), func() {
-			resp, err := doRequest(http.MethodPost, "/catalog-item-instances", "{}")
-			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
-			expectRFC9457Problem(resp, problemDetailExpectation{
-				Status: http.StatusBadRequest,
+			It("E2E-11 rejects application routing and does not create a Service", Label("contract", "unsupported"), func() {
+				agentName := discoverAgentByServiceType("network", os.Getenv("DCM_NETWORK_AGENT_NAME"))
+				opts := networkSpecOptions{
+					namePrefix: "e2e-network-unsupported", routingLevel: "application", selectorKey: "app", selectorVal: "e2e-network",
+				}
+				resource := newNetworkResource(opts)
+				DeferCleanup(func() { cleanupNetworkResource(resource) })
+				provisionNetworkResource(&resource, agentName, opts)
+				waitForNetworkFailed(resource.ResourceID)
+				assertNetworkServiceAbsent(resource)
+			})
+
+			It("E2E-08 rejects an incomplete catalog-item instance request", Label("contract"), func() {
+				resp, err := doRequest(http.MethodPost, "/catalog-item-instances", "{}")
+				Expect(err).NotTo(HaveOccurred())
+				defer resp.Body.Close()
+				expectRFC9457Problem(resp, problemDetailExpectation{
+					Status: http.StatusBadRequest,
+				})
 			})
 		})
 	})
@@ -402,14 +434,14 @@ func postNetworkJSON(path string, payload interface{}) *http.Response {
 
 func waitForNetworkReady(resourceID string) {
 	GinkgoHelper()
-	waitForNetworkStatus(resourceID, "ready")
+	waitForNetworkStatus(resourceID, networkResourceStatusReady)
 }
 
 func waitForNetworkPending(resourceID, serviceName string, duration time.Duration) {
 	GinkgoHelper()
 	pendingState := func() string {
 		status := networkResourceStatus(resourceID)
-		if status != "pending" {
+		if status != networkResourceStatusPending {
 			return status
 		}
 		service, err := networkService(networkTestNamespace(), serviceName)
@@ -419,11 +451,11 @@ func waitForNetworkPending(resourceID, serviceName string, duration time.Duratio
 		if hasExternalAddress(service) {
 			return "external-address"
 		}
-		return "pending"
+		return networkResourceStatusPending
 	}
-	Eventually(pendingState).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal("pending"),
+	Eventually(pendingState).WithTimeout(120*time.Second).WithPolling(3*time.Second).Should(Equal(networkResourceStatusPending),
 		"network Service should become pending before stability is checked")
-	Consistently(pendingState).WithTimeout(duration).WithPolling(3*time.Second).Should(Equal("pending"),
+	Consistently(pendingState).WithTimeout(duration).WithPolling(3*time.Second).Should(Equal(networkResourceStatusPending),
 		"network Service should remain pending without an external address")
 }
 
@@ -431,10 +463,10 @@ func waitForNetworkStatus(resourceID, expected string) {
 	GinkgoHelper()
 	Eventually(func() interface{} {
 		status := networkResourceStatus(resourceID)
-		if status == "failed" && expected != "failed" {
+		if status == networkResourceStatusFailed && expected != networkResourceStatusFailed {
 			return StopTrying(fmt.Sprintf("network resource %s failed", resourceID))
 		}
-		if status == "ready" && expected == "failed" {
+		if status == networkResourceStatusReady && expected == networkResourceStatusFailed {
 			return StopTrying(fmt.Sprintf("unsupported network routing unexpectedly reached ready: %s", resourceID))
 		}
 		return status
@@ -445,11 +477,11 @@ func networkResourceStatus(resourceID string) string {
 	GinkgoHelper()
 	resp, err := doRequest(http.MethodGet, "/service-type-instances/"+resourceID, "")
 	if err != nil || resp == nil {
-		return "unavailable"
+		return networkStatusUnavailable
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "unavailable"
+		return networkStatusUnavailable
 	}
 	var body map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -461,7 +493,7 @@ func networkResourceStatus(resourceID string) string {
 
 func waitForNetworkFailed(resourceID string) {
 	GinkgoHelper()
-	waitForNetworkStatus(resourceID, "failed")
+	waitForNetworkStatus(resourceID, networkResourceStatusFailed)
 }
 
 func assertNetworkInstance(resource networkCRUDResource, agentName, expectedStatus string) {
@@ -592,8 +624,8 @@ func hasExternalAddress(service map[string]interface{}) bool {
 func requireLoadBalancerController() {
 	GinkgoHelper()
 	mode := loadBalancerMode()
-	if mode == "unavailable" {
-		Skip("load-balancer capability could not be determined")
+	if mode == networkStatusUnavailable {
+		Fail("load-balancer capability could not be determined; set DCM_NETWORK_LB_MODE explicitly")
 	}
 	if mode != "metallb" && mode != "cloud" {
 		Skip("a load-balancer controller is not configured")
@@ -603,8 +635,8 @@ func requireLoadBalancerController() {
 func requireLoadBalancerMode(expected string) {
 	GinkgoHelper()
 	mode := loadBalancerMode()
-	if mode == "unavailable" {
-		Skip("load-balancer capability could not be determined")
+	if mode == networkStatusUnavailable {
+		Fail("load-balancer capability could not be determined; set DCM_NETWORK_LB_MODE explicitly")
 	}
 	if mode != expected {
 		Skip(fmt.Sprintf("load-balancer mode %q is required", expected))
@@ -617,15 +649,15 @@ func loadBalancerMode() string {
 	}
 	out, err := runKubectlInNamespace("metallb-system", "get", "deployment", "controller", "-o", "json")
 	if err != nil {
-		return "unavailable"
+		return networkStatusUnavailable
 	}
 	var deployment map[string]interface{}
 	if json.Unmarshal([]byte(out), &deployment) != nil {
-		return "unavailable"
+		return networkStatusUnavailable
 	}
 	status, ok := deployment["status"].(map[string]interface{})
 	if !ok {
-		return "unavailable"
+		return networkStatusUnavailable
 	}
 	available, _ := status["availableReplicas"].(float64)
 	if available > 0 {
@@ -755,30 +787,75 @@ func assertEmbeddedAgentHealth() {
 	Expect(body).To(HaveKeyWithValue("path", "health"))
 }
 
-func waitForEmbeddedNetworkProvider() {
-	Eventually(func() bool {
-		resp, err := networkAgentRequest(http.MethodGet, "/providers")
-		if err != nil || resp == nil {
-			return false
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return false
-		}
+// initNetworkSP verifies the embedded Network SP when it is explicitly enabled.
+// Otherwise, Network specs are skipped without probing an optional agent deployment.
+func initNetworkSP() {
+	networkSPEnabled = os.Getenv(networkSPEnabledEnv) == "true"
+	if !networkSPEnabled {
+		GinkgoWriter.Printf("Network SP disabled (%s=true to enable) — Network SP tests will be skipped\n", networkSPEnabledEnv)
+		return
+	}
 
-		var body networkAgentProviderList
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			return false
-		}
-		for _, provider := range body.Results {
-			if provider.ServiceType == "network" &&
-				provider.Type == "embedded" && provider.Status == "Ready" {
-				return true
-			}
-		}
+	networkAgentBaseURL = strings.TrimRight(os.Getenv("DCM_AGENT_URL"), "/")
+	if networkAgentBaseURL == "" {
+		networkAgentBaseURL = defaultAgentURL
+	}
+
+	waitForNetworkProvider(30 * time.Second)
+	networkSPReady = true
+	GinkgoWriter.Printf("Network SP ready through agent at %s\n", networkAgentBaseURL)
+}
+
+func waitForNetworkProvider(timeout time.Duration) {
+	Eventually(func() bool {
+		return networkAgentHealthy() && embeddedNetworkProviderReady()
+	}).WithTimeout(timeout).WithPolling(2*time.Second).Should(BeTrue(),
+		"Network SP is enabled but did not become ready through the environment agent")
+}
+
+func requireNetworkSP() {
+	if !networkSPEnabled {
+		Skip(fmt.Sprintf("Network SP disabled (set %s=true after deploying the environment-agent profile with AGENT_EMBEDDED_SPS=network)", networkSPEnabledEnv))
+	}
+	if !networkSPReady {
+		Fail("Network SP is enabled but unavailable")
+	}
+}
+
+func networkAgentHealthy() bool {
+	resp, err := unauthenticatedClient.Get(networkAgentBaseURL + "/health")
+	if err != nil || resp == nil {
 		return false
-	}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(BeTrue(),
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func waitForEmbeddedNetworkProvider() {
+	Eventually(embeddedNetworkProviderReady).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(BeTrue(),
 		"embedded network provider should be registered and Ready")
+}
+
+func embeddedNetworkProviderReady() bool {
+	resp, err := networkAgentRequest(http.MethodGet, "/providers")
+	if err != nil || resp == nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var providers networkAgentProviderList
+	if err := json.NewDecoder(resp.Body).Decode(&providers); err != nil {
+		return false
+	}
+	for _, provider := range providers.Results {
+		if provider.ServiceType == networkProviderServiceType && provider.Type == networkProviderType && provider.Status == networkProviderStatusReady {
+			return true
+		}
+	}
+	return false
 }
 
 func networkAgentRequest(method, path string) (*http.Response, error) {
