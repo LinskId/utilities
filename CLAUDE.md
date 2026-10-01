@@ -46,11 +46,13 @@ When a non-main version is specified, `--control-plane-branch` is auto-derived t
 
 **Service providers:** Configured via `providers/*.conf` files (see "Provider Registry" below). Enable with `--<label>-service-provider` or `--all-service-providers`.
 
+**Environment agent (embedded SPs):** Pass `--with-environment-agent` with `--agent-embedded-sps LIST` to enable the control-plane `environment-agent` Compose profile in the same bring-up. `LIST` is comma-separated: `container`, `vm`, `cluster`, `storage`, `network`. The script resolves a cluster kubeconfig (required; OCP path, no Kind), writes it to `AGENT_KUBECONFIG_HOST` as an absolute path, upserts agent env into `deploy/.env`, and polls agent health on `http://localhost:${AGENT_PORT}/api/v1alpha1/health` (default port **8081**, override with `--agent-port` / `AGENT_PORT`). Embedded SPs are mutually exclusive with overlapping standalone provider flags (e.g. embedded `vm` vs `--kubevirt-service-provider`). Embedding `cluster` requires `SP_CLUSTER_NAMESPACE` (default `clusters`) and `SP_PULL_SECRET` (or `ACM_CLUSTER_SP_PULL_SECRET`); if unset, pull secret is resolved from `openshift-config/pull-secret`. Prefer this path for network SP (`AGENT_EMBEDDED_SPS=network`); the standalone `--k8s-network-service-provider` flag is legacy. Other useful overrides: `ENVIRONMENT_AGENT_VERSION`, `AGENT_NAME`, `AGENT_ENVIRONMENT`, `AGENT_COST`, `SP_CONTAINER_NAMESPACE`, `SP_VM_NAMESPACE`, `SP_STORAGE_NAMESPACE`, `SP_BASE_DOMAIN`. Teardown auto-detects agent mode from `AGENT_EMBEDDED_SPS` in `deploy/.env`.
+
 **ACM/MCE deployment:** Pass `--deploy-acm` or `--deploy-mce` to install Red Hat ACM or MCE on the OCP cluster before starting the DCM stack. This clones the [acm-cluster-service-provider](https://github.com/dcm-project/acm-cluster-service-provider) repo and runs its `hack/deploy-acm-mce.sh` script. Can take 10–20 minutes. Requires `oc` and `jq`. These are opt-in flags, not enabled by default.
 
-**Cluster authentication:** When any provider is enabled, the script resolves cluster access in priority order: explicit `--kubeconfig`, existing `oc`/`kubectl` session, or `oc login` via `--cluster-api` + `--cluster-password`.
+**Cluster authentication:** When any provider is enabled **or** the environment agent is enabled, the script resolves cluster access in priority order: explicit `--kubeconfig`, existing `oc`/`kubectl` session, or `oc login` via `--cluster-api` + `--cluster-password`.
 
-**Control-plane authentication:** Pass `--auth-enabled` (or set `AUTH_DISABLED=false`) to load the auth Compose override and profile, start Keycloak, and enable JWT validation. Use the same flag on `--tear-down` when tearing down an auth-enabled stack. The E2E suite currently supports unauthenticated test runs only.
+**Control-plane authentication:** Pass `--auth-enabled` (or set `AUTH_DISABLED=false`) to load the auth Compose override and profile, start Keycloak, and enable JWT validation. Use the same flag on `--tear-down` when tearing down an auth-enabled stack. The E2E suite currently supports unauthenticated test runs only. Agent + auth together is not the documented default path yet.
 
 **Podman Compose networking:** The script uses `--in-pod false` by default so services run on the Compose bridge network and resolve service names through its DNS. Set `PODMAN_COMPOSE_IN_POD=true` only when pod-mode networking is required by the environment.
 **GitOps reconciliation:** Pass `--gitops` to add the separate published `dcm-gitops` reconciler container. It uses the same PostgreSQL database as control-plane and persists cloned repositories in the Compose `gitops_data` volume. Set `DCM_GITOPS_VERSION` to pin only that image, or use `--version` to pin all DCM images.
@@ -96,9 +98,9 @@ Service providers are defined declaratively in `providers/*.conf` files. Each co
 
 Current providers: `kubevirt`, `k8s-container`, `k8s-storage`, `k8s-network`, `acm-cluster`, `three-tier-app-demo`, `three-tier-app-demo-2`, `three-tier-app-demo-3`.
 
-Host ports published for direct SP access (compose overrides): KubeVirt **8081**, k8s-container **8082**, ACM cluster **8083**, three-tier **8084**–**8086**, k8s-container-2/3 **8087**–**8088**, k8s-storage **8089**. Environment-agent (embedded SPs) typically publishes **8081** when used as a sibling compose stack.
+Host ports published for direct SP access (compose overrides): KubeVirt **8081**, k8s-container **8082**, ACM cluster **8083**, three-tier **8084**–**8086**, k8s-container-2/3 **8087**–**8088**, k8s-storage **8089**. Environment-agent (via `--with-environment-agent`) also publishes **8081** by default — combining with standalone KubeVirt requires `--agent-port` ≠ 8081.
 
-**k8s-network:** Embedded in [environment-agent](https://github.com/dcm-project/environment-agent) (`AGENT_EMBEDDED_SPS=network`). Do not rely on the legacy utilities `--k8s-network-service-provider` / Quay standalone image path ([FLPATH-4881](https://redhat.atlassian.net/browse/FLPATH-4881) obsolete). See `test-plans/FLPATH-3227-k8s-network-sp.md`.
+**k8s-network:** Embed via `--with-environment-agent --agent-embedded-sps network` ([environment-agent](https://github.com/dcm-project/environment-agent)). Do not rely on the legacy utilities `--k8s-network-service-provider` / Quay standalone image path ([FLPATH-4881](https://redhat.atlassian.net/browse/FLPATH-4881) obsolete). See `test-plans/FLPATH-3227-k8s-network-sp.md`.
 
 ### Script Structure
 

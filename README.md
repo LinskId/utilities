@@ -85,19 +85,50 @@ Both deploy mode and `--running-versions` produce a `dcm-versions.json` mapping 
 # 10. Deploy with the GitOps reconciliation container
 ./scripts/deploy-dcm.sh --gitops
 
-# 11. Tear down an authenticated stack when done
+# 11. Deploy control-plane + environment-agent with embedded SPs (OCP kubeconfig)
+./scripts/deploy-dcm.sh --with-environment-agent \
+    --agent-embedded-sps container,vm \
+    --kubeconfig ~/.kube/config
+
+# 12. Embed ACM cluster SP via the agent (pull secret resolved from cluster if unset)
+./scripts/deploy-dcm.sh --with-environment-agent \
+    --agent-embedded-sps cluster \
+    --deploy-acm \
+    --kubeconfig ~/.kube/config
+
+# 13. Tear down an authenticated stack when done
 ./scripts/deploy-dcm.sh --auth-enabled --tear-down
 
 # Use --gitops during teardown when the reconciler was enabled
 ./scripts/deploy-dcm.sh --gitops --tear-down
+
+# Tear down an agent-enabled stack (script detects AGENT_EMBEDDED_SPS in deploy/.env)
+./scripts/deploy-dcm.sh --tear-down
 ```
 
-> **Network SP:** Use [environment-agent](https://github.com/dcm-project/environment-agent)
-> with `AGENT_EMBEDDED_SPS=network` (see agent `deploy/DEPLOY.md`). The utilities
-> `--k8s-network-service-provider` flag is **legacy** (standalone Quay image path;
-> [FLPATH-4881](https://redhat.atlassian.net/browse/FLPATH-4881) obsolete).
-> QE plan: [test-plans/FLPATH-3227-k8s-network-sp.md](test-plans/FLPATH-3227-k8s-network-sp.md).
+### Environment agent (embedded SPs)
 
+Prefer the [environment-agent](https://github.com/dcm-project/environment-agent)
+compose profile when you want SPs inside one agent process instead of standalone
+provider containers. Bring-up is a single `podman-compose` line with
+`--profile environment-agent`.
+
+| Item | Detail |
+|------|--------|
+| Flags | `--with-environment-agent` and `--agent-embedded-sps LIST` (required together) |
+| Embedded list | Comma-separated: `container`, `vm`, `cluster`, `storage`, `network` |
+| Kubeconfig | Resolved like other providers (`--kubeconfig` / `KUBECONFIG` / session / `oc login`); written to `AGENT_KUBECONFIG_HOST` for the compose bind mount (absolute path; OCP path — no Kind) |
+| Agent port | Host API on `--agent-port` / `AGENT_PORT` (default **8081**); same port as standalone KubeVirt SP — combining with `--kubevirt-service-provider` requires a distinct `--agent-port` |
+| Health | After CP `/api/v1alpha1/health`, polls agent `http://localhost:${AGENT_PORT}/api/v1alpha1/health` |
+| Mutual exclusion | An embedded SP cannot be paired with its overlapping standalone flag (e.g. embedded `container` vs `--k8s-container-service-provider`) |
+| Cluster embed | `SP_CLUSTER_NAMESPACE` (default `clusters`) and `SP_PULL_SECRET` (or `ACM_CLUSTER_SP_PULL_SECRET`); if unset, pull secret is read from `openshift-config/pull-secret` |
+
+Useful overrides: `AGENT_EMBEDDED_SPS`, `AGENT_PORT`, `ENVIRONMENT_AGENT_VERSION`, `AGENT_NAME`, `AGENT_ENVIRONMENT`, `AGENT_COST`, `SP_CONTAINER_NAMESPACE`, `SP_VM_NAMESPACE`, `SP_STORAGE_NAMESPACE`, `SP_CLUSTER_NAMESPACE`, `SP_PULL_SECRET`, `SP_BASE_DOMAIN`.
+
+> **Network SP:** embed with `--agent-embedded-sps network` (see agent `deploy/DEPLOY.md`).
+> The utilities `--k8s-network-service-provider` flag is **legacy** (standalone Quay
+> image path; [FLPATH-4881](https://redhat.atlassian.net/browse/FLPATH-4881) obsolete).
+> QE plan: [test-plans/FLPATH-3227-k8s-network-sp.md](test-plans/FLPATH-3227-k8s-network-sp.md).
 
 Run `./scripts/deploy-dcm.sh --help` for all flags and environment variable overrides.
 
