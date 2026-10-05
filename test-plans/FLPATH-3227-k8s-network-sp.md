@@ -224,7 +224,7 @@ Reference: `discoverAgentByServiceType("network", "")` in `api_helpers_test.go`.
 |------|--------|----------|
 | 1 | `GET /api/v1alpha1/service-types` | HTTP 200, `results` array |
 | 2 | Filter `results` for `service_type: network` | Entry found |
-| 3 | Inspect schema for that entry | Portable fields `ports`, `routing_level`, and `endpoints` are present. Kubernetes-specific provider hints are exercised through provisioning tests. |
+| 3 | Inspect the network service-type entry | Portable fields `ports` and `endpoints` are present, and `routing_level` is optional. When `routing_level` is omitted, it must remain omitted rather than being serialized as an empty string. Kubernetes-specific provider hints are exercised through provisioning tests. |
 
 ### Phase 2 — Provisioning smoke (P0 — `crud` label)
 
