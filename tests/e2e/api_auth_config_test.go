@@ -68,12 +68,13 @@ func TestAuthTransportRefreshesAndInjectsBearerToken(t *testing.T) {
 	defer server.Close()
 
 	settings := authSettings{
-		enabled:      true,
-		issuerURL:    server.URL + "/realms/test",
-		clientID:     "dcm-proxy",
-		clientSecret: "secret",
-		username:     "testuser",
-		password:     "password",
+		enabled:        true,
+		issuerURL:      "http://keycloak:8080/realms/test",
+		tokenIssuerURL: server.URL + "/realms/test",
+		clientID:       "dcm-proxy",
+		clientSecret:   "secret",
+		username:       "testuser",
+		password:       "password",
 	}
 	provider := &authTokenProvider{
 		settings: settings,

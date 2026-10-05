@@ -52,7 +52,7 @@ When a non-main version is specified, `--control-plane-branch` is auto-derived t
 
 **Cluster authentication:** When any provider is enabled **or** the environment agent is enabled, the script resolves cluster access in priority order: explicit `--kubeconfig`, existing `oc`/`kubectl` session, or `oc login` via `--cluster-api` + `--cluster-password`.
 
-**Control-plane authentication:** Pass `--auth-enabled` (or set `AUTH_DISABLED=false`) to load the auth Compose override and profile, start Keycloak, and enable JWT validation. Use the same flag on `--tear-down` when tearing down an auth-enabled stack. The E2E suite currently supports unauthenticated test runs only. Agent + auth together is not the documented default path yet.
+**Control-plane authentication:** Pass `--auth-enabled` (or set `AUTH_DISABLED=false`) to load the auth Compose override and profile, start Keycloak, and enable JWT validation. Use the same flag on `--tear-down` when tearing down an auth-enabled stack. The E2E suite supports authenticated runs; use `--auth-disruptive` to opt in to the disruptive authentication phase. There is no `--auth-advanced` runner flag. Agent + auth together is not the documented default path yet.
 
 **Podman Compose networking:** The script uses `--in-pod false` by default so services run on the Compose bridge network and resolve service names through its DNS. Set `PODMAN_COMPOSE_IN_POD=true` only when pod-mode networking is required by the environment.
 **GitOps reconciliation:** Pass `--gitops` to add the separate published `dcm-gitops` reconciler container. It uses the same PostgreSQL database as control-plane and persists cloned repositories in the Compose `gitops_data` volume. Set `DCM_GITOPS_VERSION` to pin only that image, or use `--version` to pin all DCM images.
@@ -245,8 +245,8 @@ CLI tests are skipped (not failed) if no binary is available.
 - `DCM_NATS_URL` env var overrides the NATS server (default: `nats://localhost:4222`)
 - `DCM_CLI_PATH` env var specifies the CLI binary path
 - `DCM_CONTAINER_PROVIDER_NAME` env var overrides which container provider to target in core platform tests (default: first `service_type=container` provider found)
-- Ginkgo labels (`smoke`, `cli`, `sp`, `container`, `network`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
-- Container and ACM cluster SP tests skip gracefully if their SP is not reachable. Network SP tests skip only while `DCM_NETWORK_SP_ENABLED` is not enabled; an enabled Network SP is required to become ready.
+- Ginkgo labels (`auth`, `smoke`, `cli`, `sp`, `container`, `acm-cluster`, `nats`, `cluster`, `disruptive`, `core`, `platform`, `rehydration`, `happy-path`, `failover`, `policy`, `negative`, `integrity`, `contract`) enable selective test runs via `--label-filter`
+- SP tests skip gracefully if the container SP or ACM cluster SP isn't reachable (no hard failure)
 - Cluster tests skip gracefully if `kubectl`/`oc` is unavailable or the cluster is unreachable
 - Disruptive tests skip if `podman` is unavailable; exclude from normal runs with `--label-filter '!disruptive'`
 

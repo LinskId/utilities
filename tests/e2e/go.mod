@@ -3,10 +3,12 @@ module github.com/dcm-project/utilities/tests/e2e
 go 1.25.0
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/nats-io/nats.go v1.50.0
 	github.com/onsi/ginkgo/v2 v2.22.0
 	github.com/onsi/gomega v1.36.0
+	golang.org/x/oauth2 v0.36.0
 )
 
 require (
